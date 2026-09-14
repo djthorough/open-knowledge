@@ -142,7 +142,9 @@ export { FILE_WATCHER_ORIGIN } from './disk-content-intake.ts';
 export {
   DocumentDurabilityState,
   DocumentDurabilityStateError,
+  type StoreAttemptToken,
   type StoreFailure,
+  type StorePublishOutcome,
 } from './document-durability-state.ts';
 export {
   canonicalProjectKey,
