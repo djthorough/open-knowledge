@@ -1288,6 +1288,8 @@ export interface ApiExtensionOptions {
   projectDir?: string;
   linkPreviewFetch?: GuardedFetch;
   getLinkPreviewsEnabled?: () => boolean;
+  resolveGitHubToken?: (host: string) => Promise<string | null>;
+  githubReferenceFetch?: typeof fetch;
   getConfigDiagnostics?: () => ConfigDiagnosticsReport;
   resolveEmbed?: (basename: string, sourcePath: string) => string | null;
   getBridgeLossReporter?: () => BridgeDeriveLossReporter | undefined;
@@ -1408,9 +1410,11 @@ export function respondPersistenceFailure(
   );
 }
 
-export function createApiExtension(
-  options: ApiExtensionOptions,
-): Extension & { nativeApi: NativeApiHandle; localApi: LocalApiDispatch } {
+export function createApiExtension(options: ApiExtensionOptions): Extension & {
+  nativeApi: NativeApiHandle;
+  localApi: LocalApiDispatch;
+  shutdownLocalOps(): Promise<void>;
+} {
   const { durabilityState } = options;
   const ingressPolicy = options.ingressPolicy ?? buildIngressPolicy({});
   const checkLocalOpSecurity = (
@@ -1486,6 +1490,8 @@ export function createApiExtension(
     ephemeral = false,
     linkPreviewFetch,
     getLinkPreviewsEnabled,
+    resolveGitHubToken,
+    githubReferenceFetch,
     getConfigDiagnostics,
   } = options;
   const declaredGitHubHosts =
@@ -4939,6 +4945,9 @@ export function createApiExtension(
     searchService,
     linkPreviewFetch,
     getLinkPreviewsEnabled,
+    declaredGitHubHosts,
+    resolveGitHubToken,
+    githubReferenceFetch,
     getGeneratedIndexSettingsStatus,
     setGeneratedIndexEnabled,
   });
@@ -5286,5 +5295,6 @@ export function createApiExtension(
     },
     nativeApi,
     localApi,
+    shutdownLocalOps: localOpRoutes.shutdown,
   };
 }

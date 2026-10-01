@@ -20,6 +20,7 @@ import {
   ComposerCommentsMenuItem,
   ComposerFilesMenuItem,
   ComposerMentionMenuItem,
+  ComposerTooltipProvider,
 } from '@/components/ComposerAddMenu';
 import { ComposerContextChips } from '@/components/ComposerContextChips';
 import { isExternalFileDrag } from '@/components/file-tree-adapter';
@@ -532,12 +533,25 @@ export function BottomComposer({
       return false;
     }
     setPending(true);
-    const outcome = await dispatch(resolvedTarget.id, input).finally(() => {
+    const settle = (clear: boolean) => {
       setPending(false);
-      clearIfOwned();
-    });
-    if (outcome.ok) recordOnboardingAskedAi();
-    return outcome.ok;
+      if (clear) clearIfOwned();
+    };
+    return dispatch(resolvedTarget.id, input, {
+      installState: states[resolvedTarget.id],
+    }).then(
+      (outcome) => {
+        settle(
+          outcome.ok || (outcome.reason !== 'setup-canceled' && outcome.reason !== 'superseded'),
+        );
+        if (outcome.ok) recordOnboardingAskedAi();
+        return outcome.ok;
+      },
+      (error: unknown) => {
+        settle(true);
+        throw error;
+      },
+    );
   };
 
   const composeCurrentInput = () => {
@@ -648,7 +662,7 @@ export function BottomComposer({
     pinnedPreview = lightRenderMarkdownPreview(pinnedSelection.markdown);
   }
 
-  const card = (
+  const cardContent = (
     // biome-ignore lint/a11y/noStaticElementInteractions: pointer clicks only delegate focus to the composer's editable; keyboard users focus it directly (Tab / ⇧⌘L).
     <div
       ref={cardRef}
@@ -837,7 +851,7 @@ export function BottomComposer({
         ) : null}
       </div>
       <div className="flex items-end gap-2">
-        <ComposerAddMenu testId="ask-ai-add-to-prompt" size="icon">
+        <ComposerAddMenu composerRef={inputRef} testId="ask-ai-add-to-prompt" size="icon">
           {attachmentsAccepted ? <ComposerFilesMenuItem onFiles={ingestFiles} /> : null}
           {selectedCommentCount > 0 && !hasQueuedComments ? (
             <ComposerCommentsMenuItem
@@ -957,6 +971,7 @@ export function BottomComposer({
       </div>
     </div>
   );
+  const card = <ComposerTooltipProvider>{cardContent}</ComposerTooltipProvider>;
 
   if (folderMode) {
     return (

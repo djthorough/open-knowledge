@@ -49,18 +49,50 @@ export type PiBridgeThreadState =
   | 'bridge-failed'
   | 'trust-failed';
 
+export interface ThreadAuthTerminalLaunch {
+  executable: string;
+  args: string[];
+  env: Record<string, string>;
+  pathPrepend: string[];
+}
+
 export interface ThreadAuthMethod {
   id: string;
   name: string;
   description?: string;
   kind?: string;
+  terminalLaunchAvailable?: true;
+}
+
+export type ThreadExitCause =
+  | 'killed'
+  | 'stopped'
+  | 'signal'
+  | 'out-of-memory'
+  | 'command-not-found'
+  | 'not-executable'
+  | 'missing-module'
+  | 'clean'
+  | 'unknown';
+
+export interface ThreadExitDiagnosis {
+  exitCode: number | null;
+  signal: string | null;
+  cause: ThreadExitCause;
 }
 
 export interface ThreadFailureDetail {
-  reason: 'auth-required' | 'connect' | 'session-setup' | 'prompt';
+  reason: 'auth-required' | 'connect' | 'session-setup' | 'prompt' | 'exited';
   agentMessage?: string;
   machineDetail?: string;
   authMethods?: ThreadAuthMethod[];
+  exit?: ThreadExitDiagnosis;
+}
+
+export const THREAD_EXIT_STDERR_WINDOW_LINES = 10;
+
+export function exitStderrWindow(tail: string): string {
+  return tail.split('\n').slice(-THREAD_EXIT_STDERR_WINDOW_LINES).join('\n');
 }
 
 export interface ThreadAgentInfo {
@@ -69,6 +101,22 @@ export interface ThreadAgentInfo {
   iconUrl?: string;
   source: 'registry' | 'custom';
   version?: string;
+}
+
+export function isTextishMime(mimeType: string | null): boolean {
+  if (mimeType === null) return false;
+  if (mimeType.startsWith('text/')) return true;
+  return (
+    mimeType === 'application/json' ||
+    mimeType === 'application/xml' ||
+    mimeType === 'application/x-yaml' ||
+    mimeType === 'application/yaml' ||
+    mimeType === 'application/javascript' ||
+    mimeType === 'application/typescript' ||
+    mimeType === 'application/toml' ||
+    mimeType === 'application/x-sh' ||
+    mimeType === 'application/sql'
+  );
 }
 
 export type AttachmentPart =
@@ -136,6 +184,8 @@ export interface ThreadInfo {
   chatGrants?: readonly ThreadChatGrant[];
 }
 
+export type BrowserUnavailableReason = 'no-node' | 'failed';
+
 export type ThreadEvent =
   | {
       kind: 'user_message';
@@ -170,6 +220,7 @@ export type ThreadEvent =
     }
   | { kind: 'title_changed'; title: string; ts: number }
   | { kind: 'agent_stderr'; line: string; ts: number }
+  | { kind: 'browser_unavailable'; reason: BrowserUnavailableReason; ts: number }
   | {
       kind: 'runtime_consent_request';
       requestId: string;
@@ -345,6 +396,12 @@ export type ThreadClientFrame =
       reqId: string;
     }
   | {
+      op: 'terminal_auth_launch';
+      threadId: string;
+      reqId: string;
+      methodId: string;
+    }
+  | {
       op: 'authenticate';
       threadId: string;
       reqId: string;
@@ -360,6 +417,7 @@ export type ThreadServerFrame =
   | { op: 'created'; reqId: string; info: ThreadInfo }
   | { op: 'resumed'; reqId: string; info: ThreadInfo }
   | { op: 'retried'; reqId: string; info: ThreadInfo }
+  | { op: 'terminal_auth_launch_ready'; reqId: string; launch: ThreadAuthTerminalLaunch }
   | { op: 'context_window_set'; reqId: string; info: ThreadInfo }
   | { op: 'authenticated'; reqId: string; info: ThreadInfo }
   | { op: 'subscribed'; threadId: string; fromSeq: number; info: ThreadInfo }
@@ -395,6 +453,7 @@ export type ThreadErrorCode =
   | 'agent-error'
   | 'not-ready'
   | 'resume-unsupported'
+  | 'agent-exited'
   | 'internal';
 
 const CLIENT_OPS = new Set([
@@ -419,6 +478,7 @@ const CLIENT_OPS = new Set([
   'rename',
   'resume',
   'retry',
+  'terminal_auth_launch',
   'authenticate',
   'delete',
   'list',
@@ -582,6 +642,9 @@ export function parseThreadClientFrame(raw: string): ThreadClientFrame | null {
       return frame as unknown as ThreadClientFrame;
     case 'retry':
       if (!str('threadId') || !str('reqId')) return null;
+      return frame as unknown as ThreadClientFrame;
+    case 'terminal_auth_launch':
+      if (!str('threadId') || !str('reqId') || !str('methodId')) return null;
       return frame as unknown as ThreadClientFrame;
     case 'authenticate':
       if (!str('threadId') || !str('reqId') || !str('methodId')) return null;

@@ -1,7 +1,18 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { type ChildProcess, spawn } from 'node:child_process';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import {
   betaBuildVersion,
   createLocalEntitlements,
@@ -12,8 +23,147 @@ import {
   createVariantPostRemove,
   parseBuilderConfig,
 } from '../../scripts/desktop-variant-config.ts';
+import { MAC_UPDATE_MINIMUM_DARWIN_VERSION } from '../../scripts/mac-update-manifest.ts';
+import { DESKTOP_VARIANTS } from '../../src/shared/desktop-variant.ts';
+import { removeTempDirBestEffort } from '../support/temp-dir-cleanup.test-helper';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+const MAC_MANIFEST = `version: 1.0.0
+files:
+  - url: OpenKnowledge-arm64.zip
+    sha512: abc
+    size: 1
+path: OpenKnowledge-arm64.zip
+sha512: abc
+releaseDate: '2026-10-01T00:00:00.000Z'
+`;
+
+const fixtures: string[] = [];
+const children = new Map<ChildProcess, Promise<void>>();
+
+afterEach(async () => {
+  for (const [child, closed] of children) {
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null)
+      child.kill();
+    await closed;
+  }
+  children.clear();
+  for (const fixture of fixtures.splice(0)) removeTempDirBestEffort(fixture);
+});
+
+async function runBuilder(
+  args: string[],
+  status = 0,
+  signal = false,
+  platform: NodeJS.Platform = process.platform,
+  variant = 'stable',
+  writesMacManifest = true,
+) {
+  const fixture = mkdtempSync(join(tmpdir(), 'ok-builder-wrapper-'));
+  fixtures.push(fixture);
+  for (const file of [
+    'scripts/run-electron-builder.mjs',
+    'scripts/desktop-variant-config.ts',
+    'scripts/mac-update-manifest.ts',
+    'scripts/packaging-diagnostics.mjs',
+    'src/shared/desktop-variant.ts',
+    'package.json',
+    'electron-builder.yml',
+    'build/installer.nsh',
+    'build/deb-postinst.sh',
+    'build/deb-postrm.sh',
+    'build/entitlements.mac.plist',
+    'build/helper-bundle/Info.plist',
+  ]) {
+    const target = join(fixture, file);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(desktopRoot, file), target);
+  }
+  for (const dep of ['yaml', '@inkeep/open-knowledge-core']) {
+    const target = join(fixture, 'node_modules', dep);
+    mkdirSync(dirname(target), { recursive: true });
+    symlinkSync(realpathSync(join(desktopRoot, 'node_modules', dep)), target, 'junction');
+  }
+  const builderDir = join(fixture, 'node_modules/electron-builder');
+  mkdirSync(builderDir, { recursive: true });
+  writeFileSync(
+    join(builderDir, 'package.json'),
+    JSON.stringify({ name: 'electron-builder', type: 'module' }),
+  );
+  writeFileSync(
+    join(builderDir, 'cli.js'),
+    `
+    import { mkdirSync, writeFileSync } from 'node:fs';
+    if (process.argv.includes('--mac') && process.env.OK_BUILDER_TEST_MAC_MANIFEST === '1') {
+      mkdirSync('dist-desktop', { recursive: true });
+      writeFileSync('dist-desktop/latest-mac.yml', ${JSON.stringify(MAC_MANIFEST)});
+    }
+    writeFileSync('invocation.json', JSON.stringify({
+      execPath: process.execPath,
+      args: process.argv.slice(2),
+      entry: process.argv[1],
+      cwd: process.cwd(),
+      marker: process.env.OK_BUILDER_TEST_MARKER,
+    }));
+    process.exit(Number(process.env.OK_BUILDER_TEST_STATUS));
+  `,
+  );
+  const preload = join(fixture, 'platform.mjs');
+  writeFileSync(
+    preload,
+    `
+    import childProcess from 'node:child_process';
+    import { writeFileSync } from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    Object.defineProperty(process, 'platform', { value: process.env.OK_BUILDER_TEST_PLATFORM });
+    const spawnSync = childProcess.spawnSync;
+    childProcess.spawnSync = (command, args, options) => {
+      writeFileSync('spawn.json', JSON.stringify({ command, args, shell: options?.shell ?? false, platform: process.platform }));
+      return process.env.OK_BUILDER_TEST_SIGNAL === '1'
+        ? { status: null, signal: 'SIGTERM' }
+        : spawnSync(command, args, options);
+    };
+    syncBuiltinESMExports();
+  `,
+  );
+  const child = spawn(
+    process.execPath,
+    ['--import', preload, join(fixture, 'scripts/run-electron-builder.mjs'), ...args],
+    {
+      cwd: fixture,
+      env: {
+        ...process.env,
+        PATH: '',
+        CSC_LINK: '',
+        CSC_KEYCHAIN: '',
+        OK_DESKTOP_VARIANT: variant,
+        OK_BUILDER_TEST_MARKER: 'forwarded',
+        OK_BUILDER_TEST_STATUS: String(status),
+        OK_BUILDER_TEST_SIGNAL: signal ? '1' : '0',
+        OK_BUILDER_TEST_PLATFORM: platform,
+        OK_BUILDER_TEST_MAC_MANIFEST: writesMacManifest ? '1' : '0',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  children.set(child, new Promise<void>((resolve) => child.once('close', () => resolve())));
+  let stderr = '';
+  child.stdout.resume();
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+  const result = await new Promise<{
+    status: number | null;
+    signal: NodeJS.Signals | null;
+    stderr: string;
+  }>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (status, signal) => resolve({ status, signal, stderr }));
+  });
+  return { fixture: realpathSync(fixture), result };
+}
 
 const configSource = `
 appId: com.inkeep.open-knowledge
@@ -75,6 +225,30 @@ const platformArtifact = (name: string): string => `${name}-${token('arch')}.${t
 const nsisArtifact = (name: string): string => `${name}-Setup-${token('arch')}.${token('ext')}`;
 
 describe('desktop variant builder config', () => {
+  test('legacy Beta preserves the installed identity, CLI wrappers and old manifest names', () => {
+    const stable = createVariantBuilderConfig(
+      parseBuilderConfig(configSource),
+      'stable',
+      paths,
+      '0.78.0-beta.6',
+    );
+    const legacy = createVariantBuilderConfig(
+      parseBuilderConfig(configSource),
+      'legacy-beta',
+      paths,
+      '0.78.0-beta.6',
+    );
+    expect(legacy).toEqual({
+      ...stable,
+      extraMetadata: {
+        ...stable.extraMetadata,
+        okDesktopVariant: 'legacy-beta',
+        version: '0.78.0-beta.6',
+      },
+      publish: stable.publish.map((entry) => ({ ...entry, channel: 'beta' })),
+    });
+  });
+
   test('preserves Stable identity', () => {
     const config = createVariantBuilderConfig(
       parseBuilderConfig(configSource),
@@ -127,7 +301,7 @@ describe('desktop variant builder config', () => {
       appId: 'com.inkeep.open-knowledge.beta',
       productName: 'OpenKnowledge Beta',
       protocols: [{ schemes: ['openknowledge-beta'] }],
-      publish: [{ channel: 'beta' }],
+      publish: [{ channel: 'beta-product' }],
       extraMetadata: {
         name: 'openknowledge-beta-desktop',
         productName: 'OpenKnowledge Beta',
@@ -252,19 +426,118 @@ describe('desktop variant builder config', () => {
       /bundle identifier/,
     );
   });
+});
 
-  test('invokes the builder JavaScript entrypoint without a Windows command shim', () => {
-    const wrapper = readFileSync(resolve(desktopRoot, 'scripts/run-electron-builder.mjs'), 'utf8');
-    expect(wrapper).toContain("require.resolve('electron-builder/cli.js')");
-    expect(wrapper).toMatch(/spawnSync\(\s*process\.execPath/);
-    expect(wrapper).not.toContain('pnpm.cmd');
-    expect(wrapper).toMatch(/electron-builder terminated by \$\{result\.signal\}/);
+const WRAPPER_CELLS = Object.keys(DESKTOP_VARIANTS).flatMap((variant) =>
+  ['--linux', '--win', '--mac'].flatMap((target) =>
+    (['darwin', 'win32', 'linux'] as const).map((platform) => ({ variant, target, platform })),
+  ),
+);
+
+describe('electron-builder wrapper execution', () => {
+  const baseRebuild = parseYaml(
+    readFileSync(join(desktopRoot, 'electron-builder.yml'), 'utf8'),
+  ).npmRebuild;
+
+  test.each(WRAPPER_CELLS)(
+    'runs $variant $target on $platform through Node with the target rebuild policy',
+    async ({ variant, target, platform }) => {
+      const { fixture, result } = await runBuilder(
+        [target, '--publish', 'never'],
+        0,
+        false,
+        platform,
+        variant,
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const entry = join(fixture, 'node_modules/electron-builder/cli.js');
+      const args = [
+        target,
+        '--publish',
+        'never',
+        '--config',
+        '.variant-build/electron-builder.yml',
+      ];
+      expect(JSON.parse(readFileSync(join(fixture, 'spawn.json'), 'utf8'))).toEqual({
+        command: process.execPath,
+        args: [entry, ...args],
+        shell: false,
+        platform,
+      });
+      expect(JSON.parse(readFileSync(join(fixture, 'invocation.json'), 'utf8'))).toEqual({
+        execPath: process.execPath,
+        entry,
+        args,
+        cwd: fixture,
+        marker: 'forwarded',
+      });
+      const generated = parseYaml(
+        readFileSync(join(fixture, '.variant-build/electron-builder.yml'), 'utf8'),
+      );
+      expect(generated.npmRebuild).toBe(target === '--linux' ? false : baseRebuild);
+      if (target === '--mac') {
+        const manifest = parseYaml(
+          readFileSync(join(fixture, 'dist-desktop/latest-mac.yml'), 'utf8'),
+        );
+        expect(manifest.minimumSystemVersion).toBe(MAC_UPDATE_MINIMUM_DARWIN_VERSION);
+        expect(manifest.version).toBe('1.0.0');
+      }
+    },
+  );
+
+  test('fails a macOS package whose builder wrote no update manifest', async () => {
+    const { result } = await runBuilder(
+      ['--mac', '--publish', 'never'],
+      0,
+      false,
+      'darwin',
+      'stable',
+      false,
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('wrote no macOS update manifest');
+    expect(result.stderr).toContain('[OK_PACKAGING_UPDATE_MANIFEST_FAILURE]');
   });
 
-  test('keeps direct and generated Linux configs aligned on the rebuild policy', () => {
-    const wrapper = readFileSync(resolve(desktopRoot, 'scripts/run-electron-builder.mjs'), 'utf8');
-    const overlay = readFileSync(resolve(desktopRoot, 'electron-builder.linux.yml'), 'utf8');
-    expect(wrapper).toContain("if (args.includes('--linux')) config.npmRebuild = false;");
-    expect(overlay).toMatch(/^npmRebuild:\s*false$/m);
+  test('an unpacked --mac --dir build leaves any manifest unstamped', async () => {
+    const { fixture, result } = await runBuilder(
+      ['--mac', '--dir', '--publish', 'never'],
+      0,
+      false,
+      'darwin',
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(fixture, 'dist-desktop/latest-mac.yml'), 'utf8')).toBe(MAC_MANIFEST);
+  });
+
+  test('a failing --mac build forwards its own status instead of the manifest check', async () => {
+    const { result } = await runBuilder(
+      ['--mac', '--publish', 'never'],
+      7,
+      false,
+      'darwin',
+      'stable',
+      false,
+    );
+    expect(result.status).toBe(7);
+    expect(result.stderr).not.toContain('update manifest');
+  });
+
+  test('forwards a failing builder exit status', async () => {
+    const { result } = await runBuilder(['--linux'], 7);
+    expect(result.status, result.stderr).toBe(7);
+  });
+
+  test('reports a signaled builder as failure', async () => {
+    const { result } = await runBuilder(['--linux'], 0, true);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('electron-builder terminated by SIGTERM');
+  });
+
+  test('the direct Linux overlay disables native rebuilds as well', () => {
+    const overlay = parseYaml(
+      readFileSync(join(desktopRoot, 'electron-builder.linux.yml'), 'utf8'),
+    );
+    expect(overlay.npmRebuild).toBe(false);
   });
 });

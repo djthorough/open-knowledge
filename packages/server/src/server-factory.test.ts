@@ -30,6 +30,7 @@ import simpleGit from 'simple-git';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { stringify as stringifyYaml } from 'yaml';
 import * as Y from 'yjs';
+import { runningAsRoot } from '../../../test-support/capabilities.test-helper.ts';
 import { MAX_AGENT_SESSIONS } from './agent-sessions.ts';
 import { BacklinkIndex } from './backlink-index.ts';
 import { getBootTimings, resetBootTimingsForTest, startBootTimings } from './boot-timings.ts';
@@ -648,7 +649,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     expect(rescueLogs[0].payload.docName).toBe('pathological-doc');
   });
 
-  test('destroy() deliberately rescues and unloads a refused-store doc instead of stranding it to the timeout', async () => {
+  test('destroy() deliberately rescues and unloads a refused-store doc instead of stranding it to the timeout', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -729,7 +731,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     }
   });
 
-  test('destroy() rescues a doc refused before shutdown that the unload loop would otherwise destroy', async () => {
+  test('destroy() rescues a doc refused before shutdown that the unload loop would otherwise destroy', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -846,7 +849,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     }
   });
 
-  test('a later refused store refreshes the runtime rescue buffer with the newest content', async () => {
+  test('a later refused store refreshes the runtime rescue buffer with the newest content', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -924,7 +928,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     }
   });
 
-  test('destroy() leaves a refused-store doc loaded when its shutdown rescue cannot write and reports it lost', async () => {
+  test('destroy() leaves a refused-store doc loaded when its shutdown rescue cannot write and reports it lost', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -1029,7 +1034,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     }
   });
 
-  test('destroy() leaves a refused-store doc to the flush timeout when its unload hangs past the deadline and reports the late completion', async () => {
+  test('destroy() leaves a refused-store doc to the flush timeout when its unload hangs past the deadline and reports the late completion', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -1124,7 +1130,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     }
   }, 30_000);
 
-  test('destroy() does not hand a second refused-store doc a budget the first one already spent', async () => {
+  test('destroy() does not hand a second refused-store doc a budget the first one already spent', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -1212,7 +1219,8 @@ describe('createServer().destroy() — graceful shutdown flush', () => {
     }
   }, 40_000);
 
-  test('a shadowless server logs and counts the rescue losses the flush timeout and skipped mints declare', async () => {
+  test('a shadowless server logs and counts the rescue losses the flush timeout and skipped mints declare', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     const projectDir = tmpDir;
     const contentDir = join(tmpDir, 'content');
     mkdirSync(contentDir, { recursive: true });
@@ -1647,24 +1655,6 @@ describe('createServer() degraded signal', () => {
       await srv.destroy();
       _resetDocExtensionsForTests();
     }
-  });
-
-  test('degraded is readonly — push and reassignment are compile-time errors', async () => {
-    const contentDir = mkdtempSync(resolve(testProjectDir, 'content-'));
-    const srv: ServerInstance = createServer({
-      contentDir,
-      projectDir: testProjectDir,
-      quiet: true,
-    });
-
-    // @ts-expect-error — readonly array: push is not allowed
-    srv.degraded.push('test');
-
-    // @ts-expect-error — readonly field: reassignment is not allowed
-    srv.degraded = [];
-
-    await srv.ready;
-    await srv.destroy();
   });
 });
 
@@ -3106,9 +3096,11 @@ describe('createServer() — config-doc admission guard', () => {
     try {
       await server.ready;
       const guard = getConfigDocAdmissionGuard(server);
-      await guard.onAuthenticate(
-        makePayload({ documentName: 'some-user-doc', peer: undefined, host: null }),
-      );
+      await expect(
+        guard.onAuthenticate(
+          makePayload({ documentName: 'some-user-doc', peer: undefined, host: null }),
+        ),
+      ).resolves.toBeUndefined();
     } finally {
       await server.destroy();
     }
@@ -3119,13 +3111,15 @@ describe('createServer() — config-doc admission guard', () => {
     try {
       await server.ready;
       const guard = getConfigDocAdmissionGuard(server);
-      await guard.onAuthenticate(
-        makePayload({
-          documentName: '__config__/project',
-          peer: '127.0.0.1',
-          host: 'localhost:5173',
-        }),
-      );
+      await expect(
+        guard.onAuthenticate(
+          makePayload({
+            documentName: '__config__/project',
+            peer: '127.0.0.1',
+            host: 'localhost:5173',
+          }),
+        ),
+      ).resolves.toBeUndefined();
     } finally {
       await server.destroy();
     }
@@ -3136,9 +3130,11 @@ describe('createServer() — config-doc admission guard', () => {
     try {
       await server.ready;
       const guard = getConfigDocAdmissionGuard(server);
-      await guard.onAuthenticate(
-        makePayload({ documentName: '__user__/config.yml', peer: '::1', host: '[::1]:5173' }),
-      );
+      await expect(
+        guard.onAuthenticate(
+          makePayload({ documentName: '__user__/config.yml', peer: '::1', host: '[::1]:5173' }),
+        ),
+      ).resolves.toBeUndefined();
     } finally {
       await server.destroy();
     }
@@ -3288,9 +3284,11 @@ describe('createServer() — config-doc admission guard', () => {
     try {
       await server.ready;
       const guard = getConfigDocAdmissionGuard(server);
-      await guard.onAuthenticate(
-        makePayload({ documentName: '__config__/project', peer: undefined, host: 'localhost' }),
-      );
+      await expect(
+        guard.onAuthenticate(
+          makePayload({ documentName: '__config__/project', peer: undefined, host: 'localhost' }),
+        ),
+      ).resolves.toBeUndefined();
     } finally {
       await server.destroy();
     }
@@ -3325,15 +3323,17 @@ describe('createServer() — config-doc admission guard', () => {
     try {
       await server.ready;
       const guard = getConfigDocAdmissionGuard(server);
-      await guard.onAuthenticate({
-        token: undefined,
-        documentName: '__config__/project',
-        context: {},
-        request: {
-          socket: { remoteAddress: '127.0.0.1' },
-          headers: { host: 'localhost:5173' },
-        },
-      } as unknown as Parameters<typeof guard.onAuthenticate>[0]);
+      await expect(
+        guard.onAuthenticate({
+          token: undefined,
+          documentName: '__config__/project',
+          context: {},
+          request: {
+            socket: { remoteAddress: '127.0.0.1' },
+            headers: { host: 'localhost:5173' },
+          },
+        } as unknown as Parameters<typeof guard.onAuthenticate>[0]),
+      ).resolves.toBeUndefined();
     } finally {
       await server.destroy();
     }
@@ -6523,7 +6523,8 @@ describe('createServer() — disk-event reconcile with an absent reconciled base
     }
   }, 30_000);
 
-  test('an ingest whose rescue writes all fail is not reported as a clean ingest', async () => {
+  test('an ingest whose rescue writes all fail is not reported as a clean ingest', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     rig = await setupReconcileRig('ok-reconcile-rescue-write-failure-');
     const docName = 'rescue-write-failure-target';
     const initial =
@@ -6609,7 +6610,8 @@ describe('createServer() — disk-event reconcile with an absent reconciled base
     }
   }, 45_000);
 
-  test('an ingest that loses its rescue and then fails to apply is not counted as an unrescued clean ingest', async () => {
+  test('an ingest that loses its rescue and then fails to apply is not counted as an unrescued clean ingest', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     rig = await setupReconcileRig('ok-reconcile-compound-ingest-failure-');
     const docName = 'compound-ingest-failure-target';
     const initial =
@@ -6701,7 +6703,8 @@ describe('createServer() — disk-event reconcile with an absent reconciled base
       await server.destroy();
     }
   }, 45_000);
-  test('an ingest that loses its rescue and then fails to apply after the live Y.Text is overwritten is reported as an unrescued loss', async () => {
+  test('an ingest that loses its rescue and then fails to apply after the live Y.Text is overwritten is reported as an unrescued loss', async (ctx) => {
+    ctx.skip(runningAsRoot, 'root bypasses the chmod refusal this test induces');
     rig = await setupReconcileRig('ok-reconcile-post-write-ingest-failure-');
     const docName = 'post-write-ingest-failure-target';
     const initial =

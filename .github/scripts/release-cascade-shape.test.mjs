@@ -1,11 +1,13 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: shell and GitHub expression fixtures must remain literal.
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, test } from 'vitest';
-import { DESKTOP_VARIANTS } from '../../packages/desktop/src/shared/desktop-variant.ts';
+import { parse } from 'yaml';
 import { buildSlackPayload } from './build-smoke-alert-payload.mjs';
 import { selectPromotion } from './select-beta-to-promote.mjs';
 import { smokePackagedDmg, VERDICT } from './smoke-packaged-dmg.mjs';
@@ -97,7 +99,7 @@ describe('the stable gate is upstream of everything that ships', () => {
     const afterGate = desktopRelease.slice(
       desktopRelease.indexOf('- name: Smoke the packaged DMG'),
     );
-    const shipping = afterGate.slice(0, afterGate.indexOf('- name: Alert on a blocked release'));
+    const shipping = afterGate.slice(0, afterGate.indexOf('  release-consumers:'));
     const stepIfs = stepLevelIfConditions(shipping);
     expect(stepIfs.length).toBeGreaterThan(0);
     for (const condition of stepIfs) {
@@ -114,7 +116,7 @@ describe('the stable gate is upstream of everything that ships', () => {
     const afterGate = desktopRelease.slice(
       desktopRelease.indexOf('- name: Smoke the packaged DMG'),
     );
-    const shipping = afterGate.slice(0, afterGate.indexOf('- name: Alert on a blocked release'));
+    const shipping = afterGate.slice(0, afterGate.indexOf('  release-consumers:'));
     const conditions = stepLevelIfConditions(shipping);
     const shippingConditions = conditions.filter(
       (c) => c !== "steps.channel.outputs.channel == 'latest'",
@@ -269,6 +271,92 @@ describe('the publishing Windows lane attests its signed native payload', () => 
 });
 
 describe('the fan-in publication DAG gates every platform', () => {
+  test.each([0, 1])(
+    'dispatch failure pages independently of publication (webhook exit %s)',
+    (status) => {
+      const job = parse(desktopRelease).jobs['release-consumers'];
+      const alert = job.steps.find((step) => step.name === 'Alert on failed publication dispatch');
+      expect(alert.if).toBe('failure() || cancelled()');
+      const dir = mkdtempSync(join(tmpdir(), 'ok-dispatch-alert-'));
+      try {
+        const capture = join(dir, 'post');
+        const output = execFileSync(
+          'bash',
+          ['-c', `curl() { printf '%s\\n' "$*" >> "$CAPTURE"; return ${status}; }\n${alert.run}`],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              RELEASE_TAG: 'v0.78.0-beta.6',
+              GITHUB_SERVER_URL: 'https://github.com',
+              GITHUB_REPOSITORY: 'inkeep/open-knowledge',
+              GITHUB_RUN_ID: '123',
+              GITHUB_STEP_SUMMARY: join(dir, 'summary'),
+              SLACK_RELEASES_WEBHOOK_URL: 'https://example.test/slack',
+              CAPTURE: capture,
+            },
+          },
+        );
+        expect(readFileSync(capture, 'utf8')).toContain(
+          'Release v0.78.0-beta.6 is published, but its notification dispatch failed',
+        );
+        expect(readFileSync(capture, 'utf8')).toContain('desktop-release-published');
+        expect(readFileSync(join(dir, 'summary'), 'utf8')).toContain(
+          'do not rebuild or republish installers',
+        );
+        expect(output.includes('could not be delivered')).toBe(status !== 0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test('consumers run only after the draft flip and cannot gate installer publication', () => {
+    const { jobs } = parse(desktopRelease);
+    expect(jobs['release-consumers'].needs).toBe('finalize');
+    expect(jobs['release-consumers'].if).toBe(
+      "${{ !cancelled() && needs.finalize.outputs.published == 'true' }}",
+    );
+    expect(jobs.finalize.outputs.published).toBe('${{ steps.publish.outputs.published }}');
+    const publish = jobs.finalize.steps.find((step) => step.id === 'publish');
+    expect(publish.run.indexOf('echo "published=true"')).toBeGreaterThan(
+      publish.run.lastIndexOf('gh release edit'),
+    );
+    expect(jobs['release-consumers'].steps[0].run).toContain('desktop-release-published');
+    for (const job of [
+      'prepare',
+      'build-macos',
+      'build-windows',
+      'build-linux',
+      'publish-assets',
+      'finalize',
+    ]) {
+      expect(JSON.stringify(jobs[job].needs ?? [])).not.toContain('release-consumers');
+    }
+    for (const consumer of ['write-back.yml', 'linear-release.yml']) {
+      expect(parse(read(consumer)).on.repository_dispatch.types).toEqual([
+        'desktop-release-published',
+      ]);
+    }
+  });
+
+  test('source builds use the immutable release tag while recovery tooling uses the workflow revision', () => {
+    const { jobs } = parse(desktopRelease);
+    for (const job of ['prepare', 'build-macos', 'build-windows', 'build-linux']) {
+      const checkout = jobs[job].steps.find((step) => step.uses?.startsWith('actions/checkout@'));
+      expect(checkout.with.ref).toBe(
+        '${{ github.event.client_payload.release_tag || inputs.release_tag }}',
+      );
+    }
+    const upgrade = jobs['build-macos'].steps.find(
+      (step) => step.name === 'Verify a historical app can update in place',
+    );
+    expect(upgrade.run).toContain(
+      'git restore --source "$WORKFLOW_SHA" --worktree .github/scripts/smoke-historical-upgrade.mjs .github/scripts/dmg-mount.mjs',
+    );
+    expect(upgrade.env.WORKFLOW_SHA).toBe('${{ github.workflow_sha }}');
+  });
+
   test('publish-assets waits on all four build jobs', () => {
     expect(desktopRelease).toContain('needs: [prepare, build-macos, build-windows, build-linux]');
   });
@@ -280,7 +368,7 @@ describe('the fan-in publication DAG gates every platform', () => {
   test('no variant builder invocation publishes; only the fan-in touches the Release', () => {
     expect(desktopRelease).not.toContain('--publish always');
     const invocations = [
-      ...desktopRelease.matchAll(/run-electron-builder\.mjs --(?:mac|win|linux)/g),
+      ...desktopRelease.matchAll(/pnpm exec node "\$DESKTOP_PACKAGER" --(?:mac|win|linux)/g),
     ];
     expect(invocations.length).toBeGreaterThanOrEqual(3);
     expect(desktopRelease).toContain('gh release upload "$RELEASE_TAG"');
@@ -576,6 +664,15 @@ describe('the bug lane verifies the synthetic tree at the same bar as main', () 
     expect(retry).not.toContain('--force');
   });
 
+  test('both attempts run every package, so server#test and the uncached tier it brings run on the verified tree', () => {
+    const commands = verify
+      .replace(/\\\n\s*/g, ' ')
+      .split('\n')
+      .filter((l) => l.includes('pnpm exec turbo run typecheck test'));
+    expect(commands).toHaveLength(2);
+    for (const command of commands) expect(command).not.toMatch(/\s(--filter|-F)[\s=]/);
+  });
+
   test('only a second consecutive failure mints a refusing verdict', () => {
     const installGuardAt = verify.indexOf('verdict=fail');
     const retryAt = verify.indexOf('| tee "$RETRY_LOG"');
@@ -623,7 +720,8 @@ describe('the bug lane verifies the synthetic tree at the same bar as main', () 
     expect(sigFrom).toBeGreaterThan(-1);
     expect(sigTo).toBeGreaterThan(sigFrom);
     const sig = bugLaneVerify.slice(sigFrom, sigTo);
-    expect(sig).toContain('"$VERDICT"');
+    expect(sig).toContain('VERDICT: ${{ steps.verify.outputs.verdict }}');
+    expect(sig).toContain('bug-lane-refusal-key.mjs');
     expect(verify).toContain('TIER_VERDICT=could-not-verify');
     expect(bugLaneVerify).not.toContain('budget_blown');
   });
@@ -636,6 +734,35 @@ describe('the bug lane verifies the synthetic tree at the same bar as main', () 
     expect(page).toContain("steps.paged_before.outputs.cache-hit != 'true'");
     expect(bugLaneVerify).toContain('actions/cache/save@');
     expect(bugLaneVerify).toContain('actions/cache/restore@');
+  });
+
+  test('a missing grouping helper still emits a usable batch-based paging key', () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'ok-refusal-key-'));
+    try {
+      const output = join(scratch, 'output');
+      const script = bugLaneVerifyStep('Refusal signature')
+        .split('run: |')[1]
+        .split('\n')
+        .map((line) => line.replace(/^ {10}/, ''))
+        .join('\n');
+      const stdout = execFileSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          RUNNER_TEMP: scratch,
+          GITHUB_OUTPUT: output,
+          GITHUB_SHA: '0000000000000000000000000000000000000000',
+          VERDICT: 'fail',
+          FIX_REFS: 'a,b',
+          SURVIVING_REFS: 'a',
+        },
+      });
+      const expected = createHash('sha256').update('fail|a,b|a').digest('hex').slice(0, 32);
+      expect(stdout).toContain('retaining batch-based paging');
+      expect(readFileSync(output, 'utf8')).toContain(`sig=${expected}`);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 
   test('the marker is gated on DELIVERY, not on the page step succeeding', () => {
@@ -693,15 +820,12 @@ describe('the bug lane verifies the synthetic tree at the same bar as main', () 
     expect(bugLaneVerifyStep('Drop signature')).toContain("env.BUG_LANE_ARMED == 'true'");
   });
 
-  test('the one page it does send says the following silence is deliberate', () => {
+  test('the one page it does send is built by the refusal payload module', () => {
     const page = bugLaneVerify.slice(
       bugLaneVerify.indexOf('- name: Page on a refusal'),
       bugLaneVerify.indexOf('- name: Record that this refusal was paged'),
     );
     expect(page).toContain('bug-lane-refusal-payload.mjs');
-    expect(
-      readFileSync(join(WORKFLOWS, '..', 'scripts', 'bug-lane-refusal-payload.mjs'), 'utf8'),
-    ).toContain('Further identical refusals stay silent');
   });
 
   test('a suppressed refusal still leaves a trace in the run', () => {
@@ -771,10 +895,6 @@ describe('every release-pipeline post prefers the releases webhook', () => {
       step: () => stepAfter(bugLaneVerify, 'Notify on a partial drop', 'Page on a refusal'),
     },
     {
-      label: 'the fast-tier refusal',
-      step: () => stepAfter(selectBeta, 'Record a fast-tier refusal'),
-    },
-    {
       label: "the Linear stamp's failure page",
       step: () => stepAfter(linearRelease, 'Alert on failed stamping'),
     },
@@ -794,8 +914,103 @@ describe('every release-pipeline post prefers the releases webhook', () => {
     expect(alarm).toContain(
       'SLACK_RELEASES_WEBHOOK_URL: ${{ secrets.SLACK_RELEASES_WEBHOOK_URL }}',
     );
-    expect(alarm).toContain('post "${SLACK_RELEASES_WEBHOOK_URL:-${SLACK_WEBHOOK_URL:-}}" Slack');
-    expect(alarm).not.toContain('post "${SLACK_WEBHOOK_URL:-}" Slack');
+    expect(alarm).toContain('node .github/scripts/release-alert-state.mjs');
+    const reporter = readFileSync(
+      join(WORKFLOWS, '..', 'scripts', 'release-alert-state.mjs'),
+      'utf8',
+    );
+    expect(reporter).toContain(
+      'process.env.SLACK_RELEASES_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL',
+    );
+  });
+
+  test('fast-tier attempts have one incident reporter and save only successful acknowledgements', () => {
+    const refusal = workflowStep(
+      selectBeta,
+      'select-beta-to-promote.yml',
+      'Record a fast-tier refusal',
+    );
+    expect(refusal).not.toContain('curl');
+    expect(refusal).not.toContain('SLACK_WEBHOOK_URL');
+    expect(stepAfter(selectBeta, 'Page the release channel')).toContain(
+      "if: steps.alarm.outputs.observed == 'true'",
+    );
+    expect(stepAfter(selectBeta, 'Remember the smoke incident acknowledgement')).toContain(
+      "if: steps.page.outcome == 'success' && steps.page.outputs.notified == 'true'",
+    );
+  });
+
+  test('a beta whose DMG failed the smoke is remembered by tag and not re-smoked on later ticks', () => {
+    const { jobs } = parse(selectBeta);
+    const step = (job, name) => {
+      const found = jobs[job].steps.find((s) => s.name === name);
+      if (!found)
+        throw new Error(`select-beta-to-promote.yml job ${job} has no step named ${name}`);
+      return found;
+    };
+    expect(jobs.evaluate['runs-on']).toBe('ubuntu-latest');
+    expect(jobs.evaluate.outputs.fast_tier_candidate).toBe(
+      '${{ steps.nominate.outputs.fast_tier_candidate }}',
+    );
+    const lookup = step('evaluate', 'Look up an earlier smoke failure for the fast-tier candidate');
+    expect(lookup.id).toBe('prior-failure');
+    expect(lookup.if).toContain("github.event_name != 'workflow_dispatch'");
+    expect(lookup.with).toEqual({
+      path: 'fast-tier-smoke-failed',
+      key: 'fast-tier-smoke-failed-v1-${{ steps.select.outputs.fast_tier_candidate }}',
+      'lookup-only': true,
+    });
+    expect(
+      step('evaluate', 'Skip the fast-tier candidate whose DMG already failed the smoke').if,
+    ).toBe("steps.prior-failure.outputs.cache-hit == 'true'");
+
+    const nominate = step('evaluate', 'Nominate the fast-tier candidate for smoking');
+    expect(nominate.env.ALREADY_FAILED).toBe('${{ steps.prior-failure.outputs.cache-hit }}');
+    const nominated = (candidate, alreadyFailed) => {
+      const dir = mkdtempSync(join(tmpdir(), 'ok-nominate-'));
+      try {
+        const out = join(dir, 'out');
+        writeFileSync(out, '');
+        execFileSync('bash', ['-c', nominate.run], {
+          env: {
+            ...process.env,
+            CANDIDATE: candidate,
+            ALREADY_FAILED: alreadyFailed,
+            GITHUB_OUTPUT: out,
+          },
+        });
+        return readFileSync(out, 'utf8');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+    expect(nominated('v1.2.3-beta.0', '')).toBe('fast_tier_candidate=v1.2.3-beta.0\n');
+    expect(nominated('v1.2.3-beta.0', 'false')).toBe('fast_tier_candidate=v1.2.3-beta.0\n');
+    expect(nominated('v1.2.3-beta.0', 'true')).toBe('fast_tier_candidate=\n');
+    expect(nominated('', '')).toBe('fast_tier_candidate=\n');
+
+    expect(jobs['smoke-fast-tier-candidate'].outputs.verdict).toBe(
+      '${{ steps.smoke.outputs.verdict }}',
+    );
+    const remember = jobs['remember-smoke-failure'];
+    expect(remember['runs-on']).toBe('ubuntu-latest');
+    expect(remember.needs).toEqual(['evaluate', 'smoke-fast-tier-candidate']);
+    expect(remember.if).toBe(
+      "always() && needs.smoke-fast-tier-candidate.outputs.verdict == 'fail'",
+    );
+    expect(step('remember-smoke-failure', 'Save the failure marker').with).toEqual({
+      path: 'fast-tier-smoke-failed',
+      key: 'fast-tier-smoke-failed-v1-${{ needs.evaluate.outputs.fast_tier_candidate }}',
+    });
+  });
+
+  test('bug verification provisions the native runtime before testing the stable tree', () => {
+    const setup = bugLaneVerify.indexOf('- name: Setup uv for ACP package acquisition tests');
+    expect(setup).toBeGreaterThan(-1);
+    expect(setup).toBeLessThan(bugLaneVerify.indexOf('- name: Verify the synthetic tree'));
+    expect(bugLaneVerifyStep('Verify ACP package acquisition prerequisites')).toContain(
+      'uvx --version',
+    );
   });
 });
 
@@ -885,7 +1100,7 @@ describe('public desktop product variants stay independently buildable', () => {
       expect(desktopRelease).toContain(pair[1]);
     }
     expect(desktopRelease).toContain('ARTIFACT_NAME: ${{ needs.prepare.outputs.artifact_name }}');
-    expect(desktopRelease).toContain('${ARTIFACT_NAME}-${VERSION}-arm64-mac.zip');
+    expect(desktopRelease).toContain('${artifact}-${VERSION}-arm64-mac.zip');
   });
 
   test('signed Beta builds require their own provisioning profile', () => {
@@ -895,8 +1110,10 @@ describe('public desktop product variants stay independently buildable', () => {
     }
   });
 
-  test('the fast-tier smoke downloads the Beta product artifact', () => {
-    expect(selectBeta).toContain(`--pattern '${DESKTOP_VARIANTS.beta.artifactName}-*.dmg'`);
+  test('the fast-tier smoke resolves the candidate inventory, including legacy Beta artifacts', () => {
+    expect(selectBeta).toContain('node .github/scripts/download-candidate-dmg.mjs');
+    expect(selectBeta).toContain('DMG: ${{ steps.download.outputs.dmg_path }}');
+    expect(selectBeta).not.toContain("--pattern 'OpenKnowledge-Beta-*.dmg'");
   });
 });
 

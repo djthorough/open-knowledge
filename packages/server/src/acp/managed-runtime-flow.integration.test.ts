@@ -192,6 +192,10 @@ describe('package admission after runtime preparation', () => {
         );
         const empty = join(home, 'empty');
         mkdirSync(empty);
+        if (source === 'login-shell') {
+          writeExecutable(join(empty, 'node'), "process.stdout.write('v1.0.0\\n');");
+          writeExecutable(join(empty, 'npx'), 'process.exit(0);');
+        }
         let bytes: Buffer;
         if (process.platform === 'win32') {
           const zip = new ZipFile();
@@ -364,6 +368,7 @@ describe('managed-runtime consent + download flow', () => {
     await manager.createThread({ agent: { source: 'registry', id: 'npxagent' } });
 
     await waitFor(() => !existsSync(staleDir), 3_000, 'stale runtime staging cleanup');
+    expect(existsSync(staleDir)).toBe(false);
   });
 
   test('grant → download → install', async () => {

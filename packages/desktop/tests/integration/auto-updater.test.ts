@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MANUAL_CHECK_WATCHDOG_MS } from '@inkeep/open-knowledge-core';
 import { describe, expect, test, vi } from 'vitest';
+import { expectKnownBug } from '../../../../test-support/known-bug.vitest.test-helper';
 import {
   bootAutoUpdater,
   buildCheckNowResultFromError,
@@ -196,7 +197,11 @@ function makeRig(
     platform?: NodeJS.Platform;
     forceDevBypass?: boolean;
     feedUrl?: string;
-    proxyFeed?: { base: string; channels: ReadonlySet<'latest' | 'beta'> };
+    proxyFeed?: {
+      base: string;
+      channels: ReadonlySet<'latest' | 'beta'>;
+      betaChannel?: 'beta' | 'beta-product';
+    };
     updaterSetup?: (u: FakeUpdater) => void;
     extraWindowCount?: number;
     prepareForRelaunch?: () => void;
@@ -432,6 +437,30 @@ describe('startAutoUpdater — initial configuration (parent §8.10 LOCKED)', ()
       'x-ok-from-version': '0.4.0-beta.7',
       'x-ok-channel': 'beta',
     });
+  });
+
+  test('separate Beta uses its own feed and manifest without enabling downgrades', () => {
+    const { rig } = makeRig({
+      appVersion: '0.78.0-beta.6',
+      updaterSetup: (updater) => {
+        let channel: string | null = null;
+        Object.defineProperty(updater, 'channel', {
+          get: () => channel,
+          set: (value: string) => {
+            channel = value;
+            updater.allowDowngrade = true;
+          },
+        });
+      },
+      proxyFeed: { base: PROXY_BASE, channels: new Set(['beta']), betaChannel: 'beta-product' },
+    });
+    expect(rig.updater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'generic',
+      url: `${PROXY_BASE}/beta-product`,
+    });
+    expect(rig.updater.channel).toBe('beta-product');
+    expect(rig.updater.allowPrerelease).toBe(true);
+    expect(rig.updater.allowDowngrade).toBe(false);
   });
 
   test('proxyFeed: stable build maps the latest channel to the proxy /stable path', () => {
@@ -2576,9 +2605,33 @@ describe('boot-time failed-install detection — install still in flight', () =>
     );
   });
 
-  test.todo(
-    'an unobserved commit on a same-MMP beta bump survives a SECOND reopen (needs PRD-8291)',
-  );
+  test('an unobserved commit on a same-MMP beta bump survives a second reopen inside the window', {
+    tags: ['known-bug'],
+    meta: {
+      issue: 'https://linear.app/inkeep/issue/PRD-8291',
+      owner: 'get-main-green',
+      until: '2026-12-01',
+    },
+  }, async () => {
+    const RUNNING_BETA = '0.54.0-beta.0';
+    const ATTEMPTED_BETA = '0.54.0-beta.1';
+    const first = reopenAt(
+      await stageAndCommit('unobserved-quit', {
+        running: RUNNING_BETA,
+        attempted: ATTEMPTED_BETA,
+      }),
+      new Date(STAGED_AT.getTime() + 45 * SECOND),
+      RUNNING_BETA,
+    );
+    expect(first.dispatches).toContain('install-in-flight-deferred' as DispatchKind);
+
+    const second = reopenAt(first.state, new Date(STAGED_AT.getTime() + 3 * MINUTE), RUNNING_BETA);
+    await expectKnownBug(/install-never-committed-reoffered/, () => {
+      expect(second.dispatches).toContain('install-in-flight-deferred' as DispatchKind);
+      expect(second.dispatches).not.toContain('install-never-committed-reoffered' as DispatchKind);
+      expect(failureCards(second)).toHaveLength(0);
+    });
+  });
 
   test('a same-MMP beta bump survives a SECOND reopen inside the window', async () => {
     const RUNNING_BETA = '0.54.0-beta.0';

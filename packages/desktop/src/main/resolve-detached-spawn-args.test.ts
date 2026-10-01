@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   type ResolveDetachedSpawnArgsInput,
   resolveDetachedSpawnArgs,
+  TERMINAL_AUTH_ARG,
 } from './resolve-detached-spawn-args.ts';
 
 const PARENT_APP = '/Applications/OpenKnowledge.app';
@@ -25,10 +26,33 @@ function makeInput(
 }
 
 describe('resolveDetachedSpawnArgs', () => {
+  test('terminalAuthAvailable → the bundled CLI is told to advertise terminal sign-in', () => {
+    const { args } = resolveDetachedSpawnArgs(makeInput({ terminalAuthAvailable: true }));
+    expect(args).toContain(TERMINAL_AUTH_ARG);
+    expect(args.indexOf('start')).toBeLessThan(args.indexOf(TERMINAL_AUTH_ARG));
+  });
+
+  test('no terminal → the flag is absent, so the server advertises nothing it cannot honour', () => {
+    expect(resolveDetachedSpawnArgs(makeInput()).args).not.toContain(TERMINAL_AUTH_ARG);
+    expect(
+      resolveDetachedSpawnArgs(makeInput({ terminalAuthAvailable: false })).args,
+    ).not.toContain(TERMINAL_AUTH_ARG);
+  });
+
   test('darwin packaged → file targets the helper bundle MacOS binary, not the parent execPath', () => {
     const { file } = resolveDetachedSpawnArgs(makeInput());
     expect(file).toBe(HELPER_BINARY);
     expect(file).not.toBe(PARENT_EXEC);
+  });
+
+  test('darwin packaged Beta → file targets the Beta-named helper bundle the build produces', () => {
+    const betaApp = '/Applications/OpenKnowledge Beta.app';
+    const { file } = resolveDetachedSpawnArgs(
+      makeInput({ parentExecPath: `${betaApp}/Contents/MacOS/OpenKnowledge Beta` }),
+    );
+    expect(file).toBe(
+      `${betaApp}/Contents/Frameworks/OpenKnowledge Beta Server.app/Contents/MacOS/OpenKnowledge Beta Helper`,
+    );
   });
 
   test.each([

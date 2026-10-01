@@ -763,6 +763,7 @@ export {
   type InstallState,
   type IpcChannelReason,
   type IpcChannelWithUrn,
+  isTerminalLaunchEnvName,
   isWindowsShellFamily,
   isWindowsShellLaunchFailureReason,
   type LintFixPromptInput,
@@ -785,6 +786,7 @@ export {
   type TerminalCli,
   type TerminalCliInfo,
   type TerminalLaunchCommand,
+  terminalLaunchEnvSlots,
   URN_HTTP_ONLY,
   URN_IPC_REGISTRY,
   type UrnIpcLookup,
@@ -853,6 +855,7 @@ export type {
   SerializedErrorTruncation,
 } from './logger-types.ts';
 export {
+  BUG_REPORT_AGENT_CHAT_ZIP_DIR,
   BUG_REPORT_ATTACHMENT_CONTENT_TYPES,
   BUG_REPORT_ATTACHMENT_EXTENSIONS,
   BUG_REPORT_ATTACHMENTS_ZIP_DIR,
@@ -860,10 +863,13 @@ export {
   BUG_REPORT_CONTACT_EMAIL_MAX_LENGTH,
   BUG_REPORT_SCREENSHOT_ZIP_ENTRY,
   BUG_REPORT_SCREENSHOT_ZIP_NAME,
+  isBugReportAgentChatEntry,
   isBugReportAttachmentEntry,
+  isBugReportCrashDumpEntry,
   LOG_LEVELS,
   MAX_BUG_REPORT_ATTACHMENTS,
   MAX_BUG_REPORT_ATTACHMENTS_TOTAL_BYTES,
+  MINIDUMP_FILE_EXTENSION,
 } from './logger-types.ts';
 export {
   LOGGER_OWNED_FIELDS,
@@ -1044,6 +1050,7 @@ export {
   skipInlineCode,
 } from './markdown/non-rendering-contexts.ts';
 export { isMutatingParserReservation } from './markdown/parser-reservations.ts';
+export { markdownToPlainText } from './markdown/plain-text.ts';
 export { normalizeReferenceLabel } from './markdown/reference-label.ts';
 export { normalizeDocRelativeAssetUrl } from './markdown/resolve-image-url.ts';
 export {
@@ -1296,6 +1303,12 @@ export {
   FrontmatterPatchSuccessSchema,
   GIT_STATUS_CODES,
   type GitAuthFailureSubclass,
+  type GitHubReferencePreview,
+  GitHubReferencePreviewSchema,
+  GitHubReferenceRequestSchema,
+  type GitHubReferenceResponse,
+  GitHubReferenceResponseSchema,
+  type GitHubReferenceStatus,
   type GitStatusCode,
   type GitWorktreeEntry,
   GitWorktreeEntrySchema,

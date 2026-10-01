@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ACP_LAUNCH_FAILURE_LOG } from '@inkeep/open-knowledge-core';
 import type {
@@ -20,6 +20,12 @@ import type {
 import { THREAD_REOPEN_OP_TIMEOUT_MS } from '@inkeep/open-knowledge-core/acp/thread-protocol';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
+import {
+  executableFacts,
+  findExecutable,
+  hasUvx,
+  pid1Reaps,
+} from '../../../../test-support/capabilities.test-helper.ts';
 import codexFixture from '../../../../test-support/fixtures/codex-legacy-warning-envelopes.json' with {
   type: 'json',
 };
@@ -31,6 +37,7 @@ import { isValidLockPid } from '../process-alive.ts';
 import { RUNTIME_VERSION } from '../version-constants.ts';
 import { withLocalAcquisitionRegistry } from './acquisition-contract.test-helper.ts';
 import { isWithin } from './archive.ts';
+import { agentSpawnPath } from './launch.ts';
 import {
   installNodeFixture,
   npmCli,
@@ -102,6 +109,10 @@ function makeManager(
     log?: PinoLogger;
     projectSkillSourceDir?: string | null;
     autoApproveOkTools?: () => boolean;
+    terminalAuthAvailable?: boolean;
+    agentBrowserTools?: AcpThreadManagerOptions['agentBrowserTools'];
+    resolveBrowserNpx?: AcpThreadManagerOptions['resolveBrowserNpx'];
+    globalDir?: string | null;
   },
 ): AcpThreadManager {
   const manager = new AcpThreadManager({
@@ -164,9 +175,14 @@ function stagedSkillNote(localDir: string): string {
 }
 
 describe('package acquisition failure projection', () => {
-  test.each(['npx', 'uvx'] as const)(
+  test.for(['npx', 'uvx'] as const)(
     '%s start and retry retain actionable native refusal and clean up',
-    async (runtime) => {
+    { timeout: 90_000 },
+    async (runtime, ctx) => {
+      ctx.skip(
+        runtime === 'uvx' && !findExecutable('uvx', agentSpawnPath(), executableFacts),
+        'uvx must be available to exercise its native acquisition refusal',
+      );
       await withLocalAcquisitionRegistry(async (home) => {
         process.env.npm_config_before = '1970-01-01';
         process.env.UV_EXCLUDE_NEWER = '1970-01-01';
@@ -242,12 +258,16 @@ describe('package acquisition failure projection', () => {
         }
       });
     },
-    90_000,
   );
 
-  test.each(['npx', 'uvx'] as const)(
+  test.for(['npx', 'uvx'] as const)(
     '%s resume exposes typed install-failed after real native acquisition refusal',
-    async (runtime) => {
+    { timeout: 90_000 },
+    async (runtime, ctx) => {
+      ctx.skip(
+        runtime === 'uvx' && !hasUvx,
+        'uvx must be available to exercise its native acquisition refusal',
+      );
       await withLocalAcquisitionRegistry(async (home) => {
         const realNpx = npmCli('npx');
         const realNpm = npmCli('npm');
@@ -327,10 +347,10 @@ describe('package acquisition failure projection', () => {
         }
       });
     },
-    90_000,
   );
 
-  test('a ceiling-sized acquisition primary preserves its headline and a distinct stderr tail', async () => {
+  test('a ceiling-sized acquisition primary preserves its headline and a distinct stderr tail', async (ctx) => {
+    ctx.skip(!hasUvx, 'uvx must be available to exercise its native acquisition refusal');
     await withLocalAcquisitionRegistry(async (home) => {
       const localDir = tmp();
       const bin = join(home, 'bin');
@@ -526,7 +546,8 @@ describe('AcpThreadManager (real subprocess)', () => {
     expect(manager.listThreads()[0]?.archived).toBe(true);
   }, 45_000);
 
-  test('closeThread kills a SIGTERM-ignoring agent tree before resolving', async () => {
+  test('closeThread kills a SIGTERM-ignoring agent tree before resolving', async (ctx) => {
+    ctx.skip(!pid1Reaps, 'PID 1 must reap the orphans this test waits on');
     const contentDir = tmp();
     const localDir = tmp();
     const kidPidFile = join(localDir, 'kid.pid');
@@ -535,13 +556,15 @@ describe('AcpThreadManager (real subprocess)', () => {
       agentPath,
       [
         "import { spawn } from 'node:child_process';",
-        "import { writeFileSync } from 'node:fs';",
+        "import { renameSync, writeFileSync } from 'node:fs';",
         "process.on('SIGTERM', () => {});",
         'const kid = spawn(process.execPath, [',
         "  '-e',",
         '  "process.on(\'SIGTERM\', () => {}); setInterval(() => {}, 1000);",',
         "], { stdio: 'ignore' });",
-        'writeFileSync(process.env.KID_PID_FILE, String(kid.pid));',
+        "const pendingPidFile = process.env.KID_PID_FILE + '.pending';",
+        'writeFileSync(pendingPidFile, String(kid.pid));',
+        'renameSync(pendingPidFile, process.env.KID_PID_FILE);',
         'setInterval(() => {}, 1000);',
         '',
       ].join('\n'),
@@ -567,6 +590,7 @@ describe('AcpThreadManager (real subprocess)', () => {
       await new Promise((r) => setTimeout(r, 25));
     }
     const kidPid = Number(readFileSync(kidPidFile, 'utf8'));
+    expect(kidPid).toBeGreaterThan(0);
     const rootPid = (
       manager as unknown as { threads: Map<string, { child: { pid?: number } | null }> }
     ).threads.get(info.threadId)?.child?.pid;
@@ -645,6 +669,7 @@ describe('AcpThreadManager (real subprocess)', () => {
       10_000,
       'thread force-closed',
     );
+    expect(manager.listThreads().filter((t) => t.archived !== true)).toEqual([]);
   }, 45_000);
 
   test('unknown agents and capacity are refused cleanly', async () => {
@@ -1718,6 +1743,60 @@ describe('AcpThreadManager persistence + resume', () => {
     expect(existsSync(join(threadsDir, `${threadId}.meta.json`))).toBe(false);
   }, 45_000);
 
+  test('deleting a chat removes only its own browser folders, and a planted chat id never loads', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    const outside = tmp();
+    writeFileSync(join(outside, 'keep.txt'), 'x');
+    const globalDir = tmp();
+    const threadsDir = join(localDir, 'threads');
+    mkdirSync(threadsDir, { recursive: true });
+    const traversal = relative(join(globalDir, 'agent-browser'), outside);
+    for (const [i, threadId] of [traversal, ''].entries()) {
+      writeFileSync(
+        join(threadsDir, `planted-${i}.meta.json`),
+        JSON.stringify({
+          version: 1,
+          info: {
+            threadId,
+            agent: { id: 'fake-resume', name: 'Fake', source: 'custom' },
+            title: 'Planted',
+            status: 'exited',
+            createdAt: 1,
+            lastActivityAt: 2,
+            modes: null,
+            configOptions: null,
+            lastSeq: -1,
+            archived: true,
+          },
+          sessionId: null,
+          cwd: contentDir,
+          agentRef: { source: 'custom', id: 'fake-resume' },
+        }),
+      );
+    }
+    writeResumableAgentEntry(localDir, 'fake-resume', { FAKE_CAPS: 'resume' });
+    const manager = makeManager(contentDir, localDir, { globalDir });
+    await manager.init();
+    expect(manager.listThreads()).toHaveLength(0);
+    for (const threadId of [traversal, '']) {
+      await expect(manager.deleteThread(threadId)).rejects.toThrow();
+    }
+
+    const threadId = await runOneTurn(manager, 'fake-resume', 'browse');
+    await manager.closeThread(threadId);
+    const own = join(globalDir, 'agent-browser', threadId);
+    const sibling = join(globalDir, 'agent-browser', crypto.randomUUID());
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, 'files-page.png'), 'x');
+    mkdirSync(sibling, { recursive: true });
+
+    await manager.deleteThread(threadId);
+    expect(existsSync(own)).toBe(false);
+    expect(existsSync(sibling)).toBe(true);
+    expect(existsSync(join(outside, 'keep.txt'))).toBe(true);
+  }, 45_000);
+
   test('destroy() archives running threads; a new manager can resume them', async () => {
     const contentDir = tmp();
     const localDir = tmp();
@@ -1819,8 +1898,11 @@ describe('handleFsWrite concurrent replace guard', () => {
   });
 });
 
-function writeRequestingAgentEntry(localDir: string, id: string, promptBody: string): void {
-  const agentPath = join(localDir, `${id}.mjs`);
+function writeRequestingAgentScript(
+  agentPath: string,
+  promptBody: string,
+  options: { loadable?: boolean } = {},
+): void {
   writeFileSync(
     agentPath,
     `
@@ -1865,7 +1947,7 @@ process.stdin.on('data', (chunk) => {
     const reply = (result) => write({ jsonrpc: '2.0', id: msg.id, result });
     if (msg.method === 'initialize') {
       clientCaps = (msg.params && msg.params.clientCapabilities) || {};
-      reply({ protocolVersion: 1, agentCapabilities: {} });
+      reply({ protocolVersion: 1, agentCapabilities: ${options.loadable === true ? '{ loadSession: true }' : '{}'} });
     } else if (msg.method === 'session/new') {
       reply({ sessionId: 'sess-1' });
     } else if (msg.method === 'session/cancel') {
@@ -1886,9 +1968,31 @@ process.stdin.on('data', (chunk) => {
 });
 `,
   );
+}
+
+function writeRequestingAgentEntry(localDir: string, id: string, promptBody: string): void {
+  const agentPath = join(localDir, `${id}.mjs`);
+  writeRequestingAgentScript(agentPath, promptBody);
   writeFileSync(
     join(localDir, 'acp-agents.json'),
     JSON.stringify([{ id, name: `Fake ${id}`, command: 'node', args: [agentPath] }]),
+  );
+}
+
+function writeRequestingRegistryAgent(
+  binDir: string,
+  promptBody: string,
+  options: { loadable?: boolean } = {},
+): void {
+  const agentPath = join(binDir, 'agent.mjs');
+  writeRequestingAgentScript(agentPath, promptBody, options);
+  writeFileSync(join(binDir, 'npx'), `#!/bin/sh\nexec "${process.execPath}" "${agentPath}"\n`, {
+    mode: 0o755,
+  });
+  writeFileSync(
+    join(binDir, 'node'),
+    `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v${process.versions.node}; exit 0; fi\nexec "${process.execPath}" "$@"\n`,
+    { mode: 0o755 },
   );
 }
 
@@ -2085,6 +2189,410 @@ describe('AcpThreadManager terminals + permission effects', () => {
     await manager.closeThread(info.threadId);
   }, 60_000);
 
+  describe.skipIf(process.platform === 'win32')('browser approvals', () => {
+    const PROMPT_OPTIONS = `[
+    { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+    { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
+    { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+  ]`;
+
+    function storeGrants(localDir: string, agentId: string, kinds: readonly string[]): void {
+      writeFileSync(
+        join(localDir, 'acp-permissions.json'),
+        JSON.stringify({ version: 1, grants: kinds.map((toolKind) => ({ agentId, toolKind })) }),
+      );
+    }
+
+    async function startBrowserChat(agentId: 'claude-acp' | 'codex-acp', promptBody: string) {
+      const contentDir = tmp();
+      const localDir = tmp();
+      const binDir = tmp();
+      storeGrants(localDir, agentId, [
+        'execute',
+        'other',
+        'mcp:ok-browser/browser_navigate',
+        'mcp:ok-browser/browser_snapshot',
+      ]);
+      writeRequestingRegistryAgent(binDir, promptBody);
+      const manager = registryManagerFor(agentId, contentDir, localDir, binDir, {
+        agentBrowserTools: () => true,
+        resolveBrowserNpx: () => ({ npx: join(binDir, 'npx'), path: binDir }),
+        globalDir: tmp(),
+      });
+      await manager.init();
+      const info = await manager.createThread({ agent: { source: 'registry', id: agentId } });
+      const events: Collected = [];
+      await manager.subscribe(info.threadId, 0, collect(events));
+      await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+      const requests = () =>
+        events
+          .map((e) => e.event)
+          .filter(
+            (e): e is Extract<ThreadEvent, { kind: 'permission_request' }> =>
+              e.kind === 'permission_request',
+          );
+      const grantsOnDisk = () =>
+        (
+          JSON.parse(readFileSync(join(localDir, 'acp-permissions.json'), 'utf8')) as {
+            grants: Array<{ toolKind: string }>;
+          }
+        ).grants.map((g) => g.toolKind);
+      return { manager, threadId: info.threadId, events, requests, grantsOnDisk };
+    }
+
+    test("Claude: the adapter's tool name decides, and no browser action rides a grant", async () => {
+      const chat = await startBrowserChat(
+        'claude-acp',
+        `
+  const options = ${PROMPT_OPTIONS};
+  const answers = [];
+  const ask = async (toolCallId, toolName, rawInput) => {
+    notify({
+      sessionUpdate: 'tool_call',
+      toolCallId,
+      title: toolName,
+      kind: 'other',
+      status: 'pending',
+      rawInput,
+      _meta: { claudeCode: { toolName } },
+    });
+    const response = await request('session/request_permission', {
+      toolCall: { toolCallId, title: toolName, kind: 'other', status: 'pending', rawInput },
+      options,
+    });
+    const outcome = response.outcome;
+    answers.push(toolCallId + '=' + (outcome.outcome === 'selected' ? outcome.optionId : outcome.outcome));
+  };
+  await ask('code', 'mcp__ok-browser__browser_run_code_unsafe', { server: 'browser', tool: 'browser_navigate' });
+  await ask('code2', 'mcp__ok-browser__browser_run_code_unsafe', { server: 'x' });
+  await ask('snap', 'mcp__ok-browser__browser_snapshot', {});
+  await ask('nav', 'mcp__ok-browser__browser_navigate', { url: 'https://example.com' });
+  notify({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answers:' + answers.join(',') + ';' } });
+  finish();
+`,
+      );
+      chat.manager.sendPrompt(chat.threadId, 'browse');
+
+      await waitUntil(() => chat.requests().length === 1, 20_000, 'first code prompt');
+      const code = chat.requests()[0];
+      if (code === undefined) throw new Error('unreachable');
+      expect(code.toolCall.title).toBe('mcp__ok-browser__browser_run_code_unsafe');
+      expect(code.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, code.requestId, {
+        kind: 'selected',
+        optionId: 'always',
+      });
+
+      await waitUntil(() => chat.requests().length === 2, 20_000, 'second code prompt');
+      const code2 = chat.requests()[1];
+      if (code2 === undefined) throw new Error('unreachable');
+      expect(code2.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, code2.requestId, {
+        kind: 'selected',
+        optionId: 'allow',
+      });
+
+      await waitUntil(() => chat.requests().length === 3, 20_000, 'snapshot prompt');
+      const snap = chat.requests()[2];
+      if (snap === undefined) throw new Error('unreachable');
+      expect(snap.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, snap.requestId, {
+        kind: 'selected',
+        optionId: 'allow',
+      });
+
+      await waitUntil(() => chat.requests().length === 4, 20_000, 'navigate prompt');
+      const nav = chat.requests()[3];
+      if (nav === undefined) throw new Error('unreachable');
+      expect(nav.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, nav.requestId, {
+        kind: 'selected',
+        optionId: 'allow',
+      });
+
+      await waitUntil(() => agentText(chat.events).includes('answers:'), 20_000, 'answers');
+      expect(agentText(chat.events)).toContain(
+        'answers:code=cancelled,code2=allow,snap=allow,nav=allow;',
+      );
+      expect(chat.requests()).toHaveLength(4);
+      expect(chat.grantsOnDisk()).toEqual([
+        'execute',
+        'other',
+        'mcp:ok-browser/browser_navigate',
+        'mcp:ok-browser/browser_snapshot',
+      ]);
+      await chat.manager.closeThread(chat.threadId);
+    }, 60_000);
+
+    test('Codex: correlated and standalone MCP approvals are tied to the browser, never to a grant', async () => {
+      const chat = await startBrowserChat(
+        'codex-acp',
+        `
+  const options = [
+    { optionId: 'approved', name: 'Allow', kind: 'allow_once' },
+    { optionId: 'approved-for-session', name: 'Allow for this session', kind: 'allow_always' },
+    { optionId: 'cancel', name: 'Cancel', kind: 'reject_once' },
+  ];
+  const answers = [];
+  const answer = (label, response) => {
+    const outcome = response.outcome;
+    answers.push(label + '=' + (outcome.outcome === 'selected' ? outcome.optionId : outcome.outcome));
+  };
+  const mcpCall = (toolCallId, server, tool) =>
+    notify({
+      sessionUpdate: 'tool_call',
+      toolCallId,
+      title: 'mcp.' + server + '.' + tool,
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { server, tool, arguments: {} },
+      _meta: { is_mcp_tool_call: true },
+    });
+  const correlated = (toolCallId) =>
+    request('session/request_permission', {
+      toolCall: { toolCallId, kind: 'execute', status: 'pending' },
+      _meta: { is_mcp_tool_approval: true },
+      options,
+    });
+  mcpCall('call-code', 'ok-browser', 'browser_run_code_unsafe');
+  answer('code', await correlated('call-code'));
+  answer(
+    'standalone',
+    await request('session/request_permission', {
+      toolCall: {
+        toolCallId: 'elicitation:sess-1:ok-browser:1',
+        kind: 'execute',
+        status: 'pending',
+        title: 'MCP tool call approval',
+        rawInput: { serverName: 'ok-browser', description: 'Allow the browser tool?' },
+      },
+      _meta: { is_mcp_tool_approval: true },
+      options,
+    }),
+  );
+  mcpCall('call-gh', 'github', 'list_issues');
+  answer('github', await correlated('call-gh'));
+  mcpCall('call-snap', 'ok-browser', 'browser_snapshot');
+  answer('snap', await correlated('call-snap'));
+  notify({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answers:' + answers.join(',') + ';' } });
+  finish();
+`,
+      );
+      chat.manager.sendPrompt(chat.threadId, 'browse');
+
+      await waitUntil(() => chat.requests().length === 1, 20_000, 'code prompt');
+      const code = chat.requests()[0];
+      if (code === undefined) throw new Error('unreachable');
+      expect(code.toolCall.title).toBe('mcp.ok-browser.browser_run_code_unsafe');
+      expect(code.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, code.requestId, {
+        kind: 'selected',
+        optionId: 'approved',
+      });
+
+      await waitUntil(() => chat.requests().length === 2, 20_000, 'standalone prompt');
+      const standalone = chat.requests()[1];
+      if (standalone === undefined) throw new Error('unreachable');
+      expect(standalone.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, standalone.requestId, {
+        kind: 'selected',
+        optionId: 'approved-for-session',
+      });
+
+      await waitUntil(() => chat.requests().length === 3, 20_000, 'snapshot prompt');
+      const snap = chat.requests()[2];
+      if (snap === undefined) throw new Error('unreachable');
+      expect(snap.toolCall.title).toBe('mcp.ok-browser.browser_snapshot');
+      expect(snap.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, snap.requestId, {
+        kind: 'selected',
+        optionId: 'approved',
+      });
+
+      await waitUntil(() => agentText(chat.events).includes('answers:'), 20_000, 'answers');
+      expect(agentText(chat.events)).toContain(
+        'answers:code=approved,standalone=cancelled,github=approved,snap=approved;',
+      );
+      expect(chat.requests()).toHaveLength(3);
+      await chat.manager.closeThread(chat.threadId);
+    }, 60_000);
+
+    test('a chat whose browser could not start says so in its transcript', async () => {
+      const contentDir = tmp();
+      const localDir = tmp();
+      const binDir = tmp();
+      writeRequestingRegistryAgent(binDir, 'finish();');
+      const manager = registryManagerFor('claude-acp', contentDir, localDir, binDir, {
+        agentBrowserTools: () => true,
+        resolveBrowserNpx: () => null,
+        globalDir: tmp(),
+      });
+      await manager.init();
+      const info = await manager.createThread({ agent: { source: 'registry', id: 'claude-acp' } });
+      const events: Collected = [];
+      await manager.subscribe(info.threadId, 0, collect(events));
+      await waitUntil(
+        () => events.some((e) => e.event.kind === 'browser_unavailable'),
+        15_000,
+        'browser notice',
+      );
+      expect(events.map((e) => e.event).filter((e) => e.kind === 'browser_unavailable')).toEqual([
+        expect.objectContaining({ kind: 'browser_unavailable', reason: 'no-node' }),
+      ]);
+      await manager.closeThread(info.threadId);
+    }, 60_000);
+
+    test('a chat notes a browser problem once, and again only when the reason changes or returns after the browser worked', async () => {
+      const contentDir = tmp();
+      const localDir = tmp();
+      const binDir = tmp();
+      const globalDir = tmp();
+      writeRequestingRegistryAgent(binDir, 'finish();', { loadable: true });
+      let npx: { npx: string; path: string } | null = null;
+      const managerFor = () =>
+        registryManagerFor('claude-acp', contentDir, localDir, binDir, {
+          agentBrowserTools: () => true,
+          resolveBrowserNpx: () => npx,
+          globalDir,
+        });
+      let manager = managerFor();
+      await manager.init();
+      const { threadId } = await manager.createThread({
+        agent: { source: 'registry', id: 'claude-acp' },
+      });
+      await waitUntil(() => manager.getInfo(threadId)?.status === 'ready', 15_000, 'ready');
+      manager.sendPrompt(threadId, 'hi');
+      await waitUntil(() => manager.getInfo(threadId)?.status === 'ready', 15_000, 'turn ended');
+      const notices = async () => {
+        const events: Collected = [];
+        await manager.subscribe(threadId, 0, collect(events));
+        return events
+          .map((e) => e.event)
+          .flatMap((e) => (e.kind === 'browser_unavailable' ? [e.reason] : []));
+      };
+      const reopen = async () => {
+        await manager.closeThread(threadId);
+        await manager.resumeThread(threadId);
+        await waitUntil(() => manager.getInfo(threadId)?.status === 'ready', 15_000, 'resumed');
+      };
+      const blockFolders = () => {
+        rmSync(join(globalDir, 'agent-browser'), { recursive: true, force: true });
+        writeFileSync(join(globalDir, 'agent-browser'), 'not a folder');
+      };
+
+      expect(await notices()).toEqual(['no-node']);
+      await reopen();
+      expect(await notices()).toEqual(['no-node']);
+
+      await manager.destroy();
+      manager = managerFor();
+      await manager.init();
+      await manager.resumeThread(threadId);
+      await waitUntil(() => manager.getInfo(threadId)?.status === 'ready', 15_000, 'restarted');
+      expect(await notices()).toEqual(['no-node']);
+
+      npx = { npx: join(binDir, 'npx'), path: binDir };
+      blockFolders();
+      await reopen();
+      expect(await notices()).toEqual(['no-node', 'failed']);
+
+      rmSync(join(globalDir, 'agent-browser'), { recursive: true, force: true });
+      await reopen();
+      expect(await notices()).toEqual(['no-node', 'failed']);
+
+      blockFolders();
+      await reopen();
+      expect(await notices()).toEqual(['no-node', 'failed', 'failed']);
+      await manager.closeThread(threadId);
+    }, 90_000);
+
+    test('a request no adapter identifies asks with no option to always allow, whatever grants exist', async () => {
+      const warnLog = vi.spyOn(log, 'warn');
+      const chat = await startBrowserChat(
+        'claude-acp',
+        `
+  const options = ${PROMPT_OPTIONS};
+  const answers = [];
+  const answer = (label, response) => {
+    const outcome = response.outcome;
+    answers.push(label + '=' + (outcome.outcome === 'selected' ? outcome.optionId : outcome.outcome));
+  };
+  answer('bare', await request('session/request_permission', { toolCall: { toolCallId: 'bare', status: 'pending' }, options }));
+  answer('sparse', await request('session/request_permission', { toolCall: { toolCallId: 'sparse', title: 'Run it', kind: 'execute', status: 'pending' }, options }));
+  notify({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answers:' + answers.join(',') + ';' } });
+  finish();
+`,
+      );
+      chat.manager.sendPrompt(chat.threadId, 'browse');
+
+      for (const [index, toolCallId] of ['bare', 'sparse'].entries()) {
+        await waitUntil(() => chat.requests().length === index + 1, 20_000, `${toolCallId} prompt`);
+        const prompt = chat.requests()[index];
+        if (prompt === undefined) throw new Error('unreachable');
+        expect(prompt.toolCall.toolCallId).toBe(toolCallId);
+        expect(prompt.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+        chat.manager.respondPermission(chat.threadId, prompt.requestId, {
+          kind: 'selected',
+          optionId: 'allow',
+        });
+      }
+
+      await waitUntil(() => agentText(chat.events).includes('answers:'), 20_000, 'answers');
+      expect(agentText(chat.events)).toContain('answers:bare=allow,sparse=allow;');
+      for (const toolCallId of ['bare', 'sparse']) {
+        expect(warnLog).toHaveBeenCalledWith(
+          { threadId: chat.threadId, toolCallId },
+          '[acp-threads] no tool call report arrived for a permission request in a chat with the browser; asking with no option to always allow it',
+        );
+      }
+      await chat.manager.closeThread(chat.threadId);
+    }, 60_000);
+
+    test('a tool call reported after its permission request settles the request as soon as it arrives', async () => {
+      const warnLog = vi.spyOn(log, 'warn');
+      const chat = await startBrowserChat(
+        'claude-acp',
+        `
+  const options = ${PROMPT_OPTIONS};
+  const toolName = 'mcp__ok-browser__browser_snapshot';
+  const pending = request('session/request_permission', { toolCall: { toolCallId: 'late', status: 'pending' }, options });
+  setTimeout(() => notify({ sessionUpdate: 'tool_call', toolCallId: 'late', title: toolName, kind: 'other', status: 'pending', rawInput: {}, _meta: { claudeCode: { toolName } } }), 150);
+  const outcome = (await pending).outcome;
+  notify({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answer:' + (outcome.outcome === 'selected' ? outcome.optionId : outcome.outcome) + ';' } });
+  finish();
+`,
+      );
+      chat.manager.sendPrompt(chat.threadId, 'browse');
+
+      await waitUntil(() => chat.requests().length === 1, 20_000, 'late prompt');
+      const prompt = chat.requests()[0];
+      if (prompt === undefined) throw new Error('unreachable');
+      const reported = chat.events
+        .map((e) => e.event)
+        .find(
+          (e): e is Extract<ThreadEvent, { kind: 'session_update' }> =>
+            e.kind === 'session_update' &&
+            e.update.sessionUpdate === 'tool_call' &&
+            e.update.toolCallId === 'late',
+        );
+      if (reported === undefined) throw new Error('the late tool call was not recorded');
+      expect(prompt.ts - reported.ts).toBeLessThan(500);
+      expect(prompt.toolCall.title).toBe('mcp__ok-browser__browser_snapshot');
+      expect(prompt.options.map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
+      chat.manager.respondPermission(chat.threadId, prompt.requestId, {
+        kind: 'selected',
+        optionId: 'allow',
+      });
+      await waitUntil(() => agentText(chat.events).includes('answer:'), 20_000, 'answer');
+      expect(agentText(chat.events)).toContain('answer:allow;');
+      expect(warnLog).not.toHaveBeenCalledWith(
+        expect.anything(),
+        '[acp-threads] no tool call report arrived for a permission request in a chat with the browser; asking with no option to always allow it',
+      );
+      await chat.manager.closeThread(chat.threadId);
+    }, 60_000);
+  });
+
   function writeShellProbingAgentEntry(localDir: string): void {
     writeRequestingAgentEntry(
       localDir,
@@ -2266,20 +2774,36 @@ describe('AcpThreadManager terminals + permission effects', () => {
   }, 45_000);
 });
 
-function writeCascadingConfigAgent(localDir: string): void {
+function writeCascadingConfigAgent(
+  localDir: string,
+  variant: {
+    thinkingResetsThought?: boolean;
+    thoughtResetsThinking?: boolean;
+    rejectUnavailableThought?: boolean;
+    requestLog?: string;
+  } = {},
+): void {
   const agentPath = join(localDir, 'cascade-agent.mjs');
   writeFileSync(
     agentPath,
     `
+import { appendFileSync } from 'node:fs';
+const REQUEST_LOG = ${JSON.stringify(variant.requestLog ?? null)};
+const THINKING_RESETS_THOUGHT = ${variant.thinkingResetsThought === true};
+const THOUGHT_RESETS_THINKING = ${variant.thoughtResetsThinking === true};
+const REJECT_UNAVAILABLE_THOUGHT = ${variant.rejectUnavailableThought === true};
 let model = 'sonnet';
+let thinkingEnabled = false;
 let thought = 'med';
+const wideThought = () => model === 'opus' && thinkingEnabled;
 const thoughtOptions = () =>
-  model === 'opus'
+  wideThought() || REJECT_UNAVAILABLE_THOUGHT
     ? [{ value: 'low', name: 'Low' }, { value: 'med', name: 'Med' }, { value: 'high', name: 'High' }, { value: 'xhigh', name: 'XHigh' }]
     : [{ value: 'low', name: 'Low' }, { value: 'med', name: 'Med' }];
 const configOptions = () => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: model,
     options: [{ value: 'sonnet', name: 'Sonnet' }, { value: 'opus', name: 'Opus' }] },
+  { id: 'thinking_enabled', name: 'Thinking enabled', category: 'other', type: 'boolean', currentValue: thinkingEnabled },
   { id: 'thought_level', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: thought,
     options: thoughtOptions() },
 ];
@@ -2302,9 +2826,22 @@ process.stdin.on('data', (chunk) => {
       reply({ sessionId: 's1', configOptions: configOptions() });
     } else if (msg.method === 'session/set_config_option') {
       const { configId, value } = msg.params;
-      if (configId === 'model') model = value;
-      else if (configId === 'thought_level' && thoughtOptions().some((o) => o.value === value)) thought = value;
-      reply({ configOptions: configOptions() });
+      if (REQUEST_LOG !== null) appendFileSync(REQUEST_LOG, configId + '\\n');
+      if (configId === 'thought_level' && REJECT_UNAVAILABLE_THOUGHT && !wideThought() && value !== 'low' && value !== 'med') {
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'thought level not available yet' } }) + '\\n');
+      } else {
+        if (configId === 'model') {
+          model = value;
+          thought = 'med';
+        } else if (configId === 'thinking_enabled') {
+          thinkingEnabled = value;
+          if (THINKING_RESETS_THOUGHT) thought = 'med';
+        } else if (configId === 'thought_level' && thoughtOptions().some((o) => o.value === value)) {
+          thought = value;
+          if (THOUGHT_RESETS_THINKING) thinkingEnabled = false;
+        }
+        reply({ configOptions: configOptions() });
+      }
     } else if (msg.method === 'session/prompt') {
       reply({ stopReason: 'end_turn' });
     } else if (msg.id !== undefined) {
@@ -2533,7 +3070,7 @@ describe('AcpThreadManager initial mode apply', () => {
 });
 
 describe('AcpThreadManager initial config apply', () => {
-  test('applies remembered config before ready — model first, dependent option re-validated', async () => {
+  test('restores a remembered thought level that only appears once thinking is turned on', async () => {
     const contentDir = tmp();
     const localDir = tmp();
     writeCascadingConfigAgent(localDir);
@@ -2541,12 +3078,20 @@ describe('AcpThreadManager initial config apply', () => {
 
     const info = await manager.createThread({
       agent: { source: 'custom', id: 'cascade-agent' },
-      settings: { config: { thought_level: 'xhigh', model: 'opus', retired_option: 'gone' } },
+      settings: {
+        config: {
+          thought_level: 'xhigh',
+          model: 'opus',
+          thinking_enabled: true,
+          retired_option: 'gone',
+        },
+      },
     });
     await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
 
     const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
     expect(opts.find((o) => o.id === 'model')?.currentValue).toBe('opus');
+    expect(opts.find((o) => o.id === 'thinking_enabled')?.currentValue).toBe(true);
     expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('xhigh');
 
     await manager.closeThread(info.threadId);
@@ -2567,6 +3112,178 @@ describe('AcpThreadManager initial config apply', () => {
     const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
     expect(opts.find((o) => o.id === 'model')?.currentValue).toBe('sonnet');
     expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('med');
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('keeps the rest of the remembered config when one value never becomes available', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    writeCascadingConfigAgent(localDir);
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { model: 'opus', thought_level: 'xhigh' } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
+    expect(opts.find((o) => o.id === 'model')?.currentValue).toBe('opus');
+    expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('med');
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('restores remembered options whatever order they were stored in', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    writeCascadingConfigAgent(localDir);
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { thinking_enabled: true, thought_level: 'high', model: 'opus' } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
+    expect(opts.find((o) => o.id === 'model')?.currentValue).toBe('opus');
+    expect(opts.find((o) => o.id === 'thinking_enabled')?.currentValue).toBe(true);
+    expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('high');
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('applies the model before a remembered value the model change would reset', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    writeCascadingConfigAgent(localDir);
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { thought_level: 'low', model: 'opus' } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
+    expect(opts.find((o) => o.id === 'model')?.currentValue).toBe('opus');
+    expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('low');
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('logs remembered options that did not come back, keeping missing options apart from unavailable values', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    writeCascadingConfigAgent(localDir);
+    const infoLog = vi.spyOn(log, 'info');
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { model: 'opus', thought_level: 'xhigh', retired_option: 'gone' } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    expect(infoLog).toHaveBeenCalledWith(
+      {
+        threadId: info.threadId,
+        missingConfigIds: ['retired_option'],
+        unmatchedConfigIds: ['thought_level'],
+        sessionStateUnknown: false,
+      },
+      '[acp-threads] some remembered config options did not come back in the new session',
+    );
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('applies a remembered value again when a later option resets it in the same pass', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    writeCascadingConfigAgent(localDir, { thinkingResetsThought: true });
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { model: 'opus', thought_level: 'low', thinking_enabled: true } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
+    expect(opts.find((o) => o.id === 'thinking_enabled')?.currentValue).toBe(true);
+    expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('low');
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('retries a remembered value the agent rejected once a later option makes it available', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    writeCascadingConfigAgent(localDir, { rejectUnavailableThought: true });
+    const warnLog = vi.spyOn(log, 'warn');
+    const infoLog = vi.spyOn(log, 'info');
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { model: 'opus', thought_level: 'xhigh', thinking_enabled: true } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    const opts = manager.getInfo(info.threadId)?.configOptions ?? [];
+    expect(opts.find((o) => o.id === 'thought_level')?.currentValue).toBe('xhigh');
+    expect(infoLog).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: info.threadId, configId: 'thought_level', pass: 0 }),
+      '[acp-threads] initial config apply attempt failed',
+    );
+    for (const message of [
+      '[acp-threads] initial config apply failed',
+      '[acp-threads] some remembered config options could not be applied to the new session',
+    ]) {
+      expect(warnLog).not.toHaveBeenCalledWith(expect.anything(), message);
+    }
+
+    await manager.closeThread(info.threadId);
+  }, 30_000);
+
+  test('stops retrying when two remembered options keep resetting each other', async () => {
+    const contentDir = tmp();
+    const localDir = tmp();
+    const requestLog = join(localDir, 'set-config-requests.log');
+    writeCascadingConfigAgent(localDir, {
+      thinkingResetsThought: true,
+      thoughtResetsThinking: true,
+      requestLog,
+    });
+    const infoLog = vi.spyOn(log, 'info');
+    const manager = makeManager(contentDir, localDir);
+
+    const info = await manager.createThread({
+      agent: { source: 'custom', id: 'cascade-agent' },
+      settings: { config: { model: 'opus', thinking_enabled: true, thought_level: 'low' } },
+    });
+    await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+
+    expect(readFileSync(requestLog, 'utf8').trim().split('\n')).toEqual([
+      'model',
+      'thinking_enabled',
+      'thought_level',
+      'thinking_enabled',
+      'thought_level',
+      'thinking_enabled',
+    ]);
+    expect(infoLog).toHaveBeenCalledWith(
+      {
+        threadId: info.threadId,
+        missingConfigIds: [],
+        unmatchedConfigIds: ['thought_level'],
+        sessionStateUnknown: false,
+      },
+      '[acp-threads] some remembered config options did not come back in the new session',
+    );
 
     await manager.closeThread(info.threadId);
   }, 30_000);
@@ -3341,6 +4058,10 @@ describe('AcpThreadManager prompt queueing', () => {
       5_000,
       'the file read cleared the stall',
     );
+    expect(
+      infoLog.mock.calls.some((call) => call[1] === '[acp-threads] turn resumed after stall'),
+    ).toBe(true);
+    expect(manager.getInfo(info.threadId)?.stalledSince).toBeUndefined();
     await waitUntil(() => !internals(manager).turnActive(info.threadId), 20_000, 'turn ended');
 
     await manager.closeThread(info.threadId);
@@ -3472,6 +4193,7 @@ describe.skipIf(process.platform === 'win32')('login-shell PATH fallback', () =>
     const info = await manager.createThread({ agent: { source: 'custom', id: 'shell-agent' } });
     await manager.subscribe(info.threadId, 0, () => {});
     await waitUntil(() => manager.getInfo(info.threadId)?.status === 'ready', 15_000, 'ready');
+    expect(manager.getInfo(info.threadId)?.status).toBe('ready');
   }, 30_000);
 
   test('a command missing from the login shell too still fails with the install hint', async () => {
@@ -5141,7 +5863,7 @@ function capturingLog(sink: { obj: Record<string, unknown>; msg: string }[]): Pi
 function writeHeldStdioAgentEntry(
   localDir: string,
   id: string,
-  mode: 'ready' | 'auth' | 'session-setup' | 'prompt' | 'resume',
+  mode: 'ready' | 'auth' | 'connect' | 'session-setup' | 'prompt' | 'resume',
   dieFile: string,
   releaseFile: string,
 ): { diagnostic: string } {
@@ -5176,7 +5898,9 @@ function writeHeldStdioAgentEntry(
       while ((end = buffer.indexOf('\\n')) !== -1) {
         const msg = JSON.parse(buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
-        if (msg.method === 'initialize') {
+        if (msg.method === 'initialize' && ${JSON.stringify(mode)} === 'connect') {
+          writeFileSync(${JSON.stringify(`${dieFile}.request`)}, 'initialize');
+        } else if (msg.method === 'initialize') {
           write({ jsonrpc: '2.0', id: msg.id, result: {
             protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } },
             authMethods: [{ id: 'login', name: 'Login' }],
@@ -5492,8 +6216,8 @@ describe('diagnostic stream lifetime', () => {
     ).toBe('invalid prompt');
   }, 30_000);
 
-  test.each(['session-setup', 'prompt'] as const)(
-    '%s failure waits for held unterminated stderr',
+  test.each(['connect', 'session-setup', 'prompt'] as const)(
+    '%s failure waits for held unterminated stderr and is the only failure reported',
     async (mode) => {
       const localDir = tmp();
       const id = 'held-agent';
@@ -5531,6 +6255,10 @@ describe('diagnostic stream lifetime', () => {
           ?.machineDetail;
         expect(detail).toContain(fixture.diagnostic);
         expect(detail).not.toContain('held-secret');
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(
+          statuses.flatMap((event) => (event.failure === undefined ? [] : [event.failure.reason])),
+        ).toEqual([mode]);
       } finally {
         child.stderr.resume();
         writeFileSync(releaseFile, 'release');
@@ -5544,6 +6272,7 @@ describe('diagnostic stream lifetime', () => {
     const localDir = tmp();
     const id = 'resume-after-close';
     const pidFile = join(localDir, 'resumed-pid');
+    const RESUMED_AGENT_SELF_EXIT_MS = 30_000;
     writeResumableAgentEntry(localDir, id, { FAKE_CAPS: 'resume' });
     const release = Promise.withResolvers<string | null>();
     const entered = Promise.withResolvers<void>();
@@ -5566,7 +6295,7 @@ describe('diagnostic stream lifetime', () => {
       `
       import { writeFileSync } from 'node:fs';
       writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-      setInterval(() => {}, 1000);
+      setTimeout(() => process.exit(0), ${RESUMED_AGENT_SELF_EXIT_MS});
       process.stdin.once('data', (chunk) => {
         const msg = JSON.parse(chunk.toString());
         process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id,
@@ -5580,51 +6309,31 @@ describe('diagnostic stream lifetime', () => {
     await manager.closeThread(info.threadId);
     expect(manager.getInfo(info.threadId)?.archived).toBe(true);
     release.resolve(null);
-    try {
-      expect(await resumed).toMatchObject({ code: 'spawn-failed' });
-      const pid = Number(readFileSync(pidFile, 'utf8'));
-      expect(
-        isValidLockPid(pid),
-        `resumed-pid held ${JSON.stringify(readFileSync(pidFile, 'utf8'))}`,
-      ).toBe(true);
-      await expect
-        .poll(
-          () => {
-            try {
-              process.kill(pid, 0);
-              return true;
-            } catch {
-              return false;
-            }
-          },
-          { timeout: 3000 },
-        )
-        .toBe(false);
-      const replay: ThreadEvent[] = [];
-      await manager.subscribe(info.threadId, 0, (frame) => {
-        if (frame.op === 'event') replay.push(frame.event);
-        if (frame.op === 'events') replay.push(...frame.events);
-      });
-      expect(replay.at(-1)).toMatchObject({ kind: 'status', detail: 'thread closed' });
-    } finally {
-      if (existsSync(pidFile)) {
-        const raw = readFileSync(pidFile, 'utf8');
-        const pid = Number(raw);
-        if (isValidLockPid(pid)) {
+    expect(await resumed).toMatchObject({ code: 'spawn-failed' });
+    const pid = Number(readFileSync(pidFile, 'utf8'));
+    expect(
+      isValidLockPid(pid),
+      `resumed-pid held ${JSON.stringify(readFileSync(pidFile, 'utf8'))}`,
+    ).toBe(true);
+    await expect
+      .poll(
+        () => {
           try {
-            process.kill(pid, 'SIGKILL');
-          } catch {}
-        } else {
-          console.warn(
-            `[resume-after-close cleanup] left a spawned child unreaped: ${pidFile} held ${JSON.stringify(raw)}, which isValidLockPid rejects`,
-          );
-        }
-      } else {
-        console.warn(
-          `[resume-after-close cleanup] no pidfile at ${pidFile}: either the resume failed before spawning, or a child was spawned and this test threw before the child's first write — in that case it is still running`,
-        );
-      }
-    }
+            process.kill(pid, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 3000 },
+      )
+      .toBe(false);
+    const replay: ThreadEvent[] = [];
+    await manager.subscribe(info.threadId, 0, (frame) => {
+      if (frame.op === 'event') replay.push(frame.event);
+      if (frame.op === 'events') replay.push(...frame.events);
+    });
+    expect(replay.at(-1)).toMatchObject({ kind: 'status', detail: 'thread closed' });
   }, 15_000);
 
   test.each(['prompt', 'resume'] as const)(
@@ -5741,6 +6450,101 @@ describe('diagnostic stream lifetime', () => {
       await closed;
     }
   }, 20_000);
+
+  test('an agent that dies while waiting for sign-in reports the crash', async () => {
+    const localDir = tmp();
+    const id = 'held-agent';
+    const dieFile = join(localDir, 'die');
+    const releaseFile = join(localDir, 'release-stdio');
+    writeHeldStdioAgentEntry(localDir, id, 'auth', dieFile, releaseFile);
+    const manager = makeManager(tmp(), localDir);
+    const info = await manager.createThread({ agent: { source: 'custom', id } });
+    const statuses: StatusEvent[] = [];
+    await manager.subscribe(info.threadId, 0, collectStatuses(statuses));
+    await waitUntil(
+      () => manager.getInfo(info.threadId)?.status === 'auth_required',
+      5000,
+      'sign in',
+    );
+    const child = internals(manager).child(info.threadId);
+    if (child == null) throw new Error('child missing');
+    const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+    try {
+      writeFileSync(dieFile, 'exit');
+      writeFileSync(releaseFile, 'release');
+      await waitUntil(
+        () => statuses.some((event) => event.failure?.reason === 'exited'),
+        5000,
+        'the crash to be reported',
+      );
+      expect(statuses.find((event) => event.failure?.reason === 'exited')?.failure).toMatchObject({
+        exit: { exitCode: 7, signal: null },
+      });
+      expect(
+        statuses.flatMap((event) => (event.failure === undefined ? [] : [event.failure.reason])),
+      ).toEqual(['auth-required', 'exited']);
+    } finally {
+      writeFileSync(releaseFile, 'release');
+      await closed;
+    }
+  }, 20_000);
+
+  test.each(['eof-first', 'exit-first'] as const)(
+    'an agent that dies during a sign-in ends exited with one crash card when %s',
+    async (order) => {
+      const localDir = tmp();
+      const id = 'held-agent';
+      const dieFile = join(localDir, 'die');
+      const releaseFile = join(localDir, 'release-stdio');
+      writeHeldStdioAgentEntry(localDir, id, 'auth', dieFile, releaseFile);
+      const manager = makeManager(tmp(), localDir);
+      const info = await manager.createThread({ agent: { source: 'custom', id } });
+      const statuses: StatusEvent[] = [];
+      await manager.subscribe(info.threadId, 0, collectStatuses(statuses));
+      await waitUntil(
+        () => manager.getInfo(info.threadId)?.status === 'auth_required',
+        5000,
+        'sign in',
+      );
+      const child = internals(manager).child(info.threadId);
+      if (child?.stdout == null) throw new Error('child stdout missing');
+      const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+      try {
+        const signIn = manager
+          .authenticateThread(info.threadId, 'login')
+          .catch((error: unknown) => error);
+        await waitUntil(
+          () => manager.getInfo(info.threadId)?.status === 'authenticating',
+          5000,
+          'signing in',
+        );
+        if (order === 'eof-first') {
+          child.stdout.destroy();
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+        writeFileSync(dieFile, 'exit');
+        await exited;
+        writeFileSync(releaseFile, 'release');
+        await closed;
+        expect(await signIn).toMatchObject({ code: 'agent-exited' });
+        await waitUntil(
+          () => statuses.some((event) => event.failure?.reason === 'exited'),
+          5000,
+          'the crash to be reported',
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(
+          statuses.flatMap((event) => (event.failure === undefined ? [] : [event.failure.reason])),
+        ).toEqual(['auth-required', 'exited']);
+        expect(manager.getInfo(info.threadId)?.status).toBe('exited');
+      } finally {
+        writeFileSync(releaseFile, 'release');
+        await closed;
+      }
+    },
+    20_000,
+  );
 
   test('a drained old exit cannot replace the ready status or handle of a retried agent', async () => {
     const localDir = tmp();
@@ -5876,12 +6680,20 @@ describe('agent failures reach the server log', () => {
         5000,
         'the process exit status detail',
       );
-      const detail = statuses.find(
+      const exitEvent = statuses.find(
         (event) => event.status === 'exited' && event.detail?.startsWith('agent exited (7)'),
-      )?.detail;
-      expect(detail).toContain('ran out of memory');
-      expect(detail).not.toContain('fixture-exit-secret');
-      expect(detail?.length).toBeLessThanOrEqual(16_000);
+      );
+      expect(exitEvent?.detail).toBe('agent exited (7)');
+      expect(exitEvent?.failure?.reason).toBe('exited');
+      expect(exitEvent?.failure?.agentMessage).toBeUndefined();
+      expect(exitEvent?.failure?.exit).toEqual({
+        exitCode: 7,
+        signal: null,
+        cause: 'out-of-memory',
+      });
+      expect(exitEvent?.failure?.machineDetail).toContain('ran out of memory');
+      expect(exitEvent?.failure?.machineDetail).not.toContain('fixture-exit-secret');
+      expect(exitEvent?.failure?.machineDetail?.length).toBeLessThanOrEqual(16_000);
       const exitLine = lines.find((l) => l.msg.includes('agent exited unexpectedly'));
       expect(exitLine).toBeDefined();
       expect(exitLine?.obj.code).toBe(7);
@@ -6965,6 +7777,12 @@ function logCount(warn: ReturnType<typeof vi.spyOn>, message: string): number {
   return warn.mock.calls.filter((call) => call[1] === message).length;
 }
 
+function hasLaunchFailureEntry(logPath: string, threadId: string): boolean {
+  if (!existsSync(logPath)) return false;
+  const text = readFileSync(logPath, 'utf8');
+  return text.includes(`thread=${threadId}`) && text.endsWith('\n\n');
+}
+
 async function withNpxLaunchFixture(
   mode: NpxEnoentMode,
   run: (fixture: {
@@ -7067,7 +7885,11 @@ describe('launch failure diagnostics and npx cache recovery', () => {
       const statuses = await statusesOf(manager, info.threadId);
       expect(statuses.filter((status) => status === 'error')).toHaveLength(1);
       const logPath = join(localDir, ACP_LAUNCH_FAILURE_LOG);
-      await waitUntil(() => existsSync(logPath), 5_000, 'launch failure log');
+      await waitUntil(
+        () => hasLaunchFailureEntry(logPath, info.threadId),
+        5_000,
+        'launch failure log entry',
+      );
       const logText = readFileSync(logPath, 'utf8');
       expect(logText.match(/=== acp launch failure /g)).toHaveLength(1);
       expect(logText).toContain(
@@ -7169,7 +7991,11 @@ describe('launch failure diagnostics and npx cache recovery', () => {
     expect(existsSync(entryDir)).toBe(true);
     expect(logCount(warn, NPX_RELAUNCH_LOG)).toBe(0);
     const logPath = join(localDir, ACP_LAUNCH_FAILURE_LOG);
-    await waitUntil(() => existsSync(logPath), 5_000, 'launch failure log');
+    await waitUntil(
+      () => hasLaunchFailureEntry(logPath, info.threadId),
+      5_000,
+      'launch failure log entry',
+    );
     const logText = readFileSync(logPath, 'utf8');
     expect(logText).toContain(
       `thread=${info.threadId} agent=npx-cache source=custom reason=connect ===`,
@@ -7193,7 +8019,11 @@ describe('launch failure diagnostics and npx cache recovery', () => {
       'session setup failure',
     );
     const logPath = join(localDir, ACP_LAUNCH_FAILURE_LOG);
-    await waitUntil(() => existsSync(logPath), 5_000, 'launch failure log');
+    await waitUntil(
+      () => hasLaunchFailureEntry(logPath, info.threadId),
+      5_000,
+      'launch failure log entry',
+    );
     const logText = readFileSync(logPath, 'utf8');
     expect(logText).toContain(
       `thread=${info.threadId} agent=broken-agent source=custom reason=session-setup ===\nsession setup failed: Failed to initialize session services`,
@@ -7222,4 +8052,114 @@ describe('launch failure diagnostics and npx cache recovery', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(existsSync(join(localDir, ACP_LAUNCH_FAILURE_LOG))).toBe(false);
   }, 30_000);
+});
+
+function writeTerminalAuthAgentEntry(
+  localDir: string,
+  id: string,
+  env: Record<string, string>,
+  capsFile: string,
+): string {
+  const agentPath = join(localDir, `${id}.mjs`);
+  writeFileSync(
+    agentPath,
+    `
+import { writeFileSync } from 'node:fs';
+const write = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n');
+let buffer = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  let idx = buffer.indexOf('\\n');
+  while (idx !== -1) {
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    idx = buffer.indexOf('\\n');
+    if (line.trim() === '') continue;
+    const msg = JSON.parse(line);
+    if (msg.method === 'initialize') {
+      writeFileSync(${JSON.stringify(capsFile)}, JSON.stringify(msg.params.clientCapabilities ?? {}));
+      write({
+        jsonrpc: '2.0',
+        id: msg.id,
+        result: {
+          protocolVersion: 1,
+          agentCapabilities: {},
+          authMethods: [
+            { type: 'terminal', id: 'cli-login', name: 'CLI login', args: ['login'], env: { FROM_METHOD: '1' } },
+          ],
+        },
+      });
+    } else if (msg.method === 'session/new') {
+      write({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message: 'sign in required' } });
+    } else if (msg.id !== undefined) {
+      write({ jsonrpc: '2.0', id: msg.id, result: {} });
+    }
+  }
+});
+`,
+  );
+  writeFileSync(
+    join(localDir, 'acp-agents.json'),
+    JSON.stringify([{ id, name: `Fake ${id}`, command: 'node', args: [agentPath], env }]),
+  );
+  return agentPath;
+}
+
+describe('terminal sign-in methods', () => {
+  test('the persisted method only flags the launch, and the live launch carries the env', async () => {
+    const localDir = tmp();
+    const capsFile = join(localDir, 'caps.json');
+    const agentPath = writeTerminalAuthAgentEntry(
+      localDir,
+      'term-auth',
+      { FIXTURE_HOME: '/tmp/fixture-home' },
+      capsFile,
+    );
+    const manager = makeManager(tmp(), localDir, { terminalAuthAvailable: true });
+    const info = await manager.createThread({ agent: { source: 'custom', id: 'term-auth' } });
+    const statuses: StatusEvent[] = [];
+    await manager.subscribe(info.threadId, 0, collectStatuses(statuses));
+    await waitUntil(
+      () => statuses.some((event) => event.status === 'auth_required'),
+      15_000,
+      'sign in',
+    );
+    const failure = [...statuses]
+      .reverse()
+      .find((event) => event.status === 'auth_required')?.failure;
+    expect(failure?.authMethods).toEqual([
+      {
+        id: 'cli-login',
+        name: 'CLI login',
+        kind: 'terminal',
+        terminalLaunchAvailable: true,
+      },
+    ]);
+    expect(JSON.stringify(failure)).not.toContain('fixture-home');
+    expect(manager.terminalAuthLaunch(info.threadId, 'cli-login')).toEqual({
+      executable: 'node',
+      args: [agentPath, 'login'],
+      env: { FIXTURE_HOME: '/tmp/fixture-home', FROM_METHOD: '1' },
+      pathPrepend: [],
+    });
+    expect(() => manager.terminalAuthLaunch(info.threadId, 'missing')).toThrow(
+      'no terminal sign-in',
+    );
+    expect(JSON.parse(readFileSync(capsFile, 'utf8'))).toMatchObject({ auth: { terminal: true } });
+  }, 20_000);
+
+  test('a host without a terminal does not advertise terminal sign-in', async () => {
+    const localDir = tmp();
+    const capsFile = join(localDir, 'caps.json');
+    writeTerminalAuthAgentEntry(localDir, 'term-auth', {}, capsFile);
+    const manager = makeManager(tmp(), localDir);
+    const info = await manager.createThread({ agent: { source: 'custom', id: 'term-auth' } });
+    await waitUntil(
+      () => manager.getInfo(info.threadId)?.status === 'auth_required',
+      15_000,
+      'sign in',
+    );
+    expect(JSON.parse(readFileSync(capsFile, 'utf8'))).not.toHaveProperty('auth');
+  }, 20_000);
 });

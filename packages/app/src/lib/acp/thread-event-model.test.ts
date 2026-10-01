@@ -12,6 +12,17 @@ function ev(event: ThreadEvent): ThreadEvent {
 }
 
 describe('buildThreadRenderModel', () => {
+  test('keeps a browser_unavailable event as its own transcript item', () => {
+    const model = buildThreadRenderModel(
+      [
+        ev({ kind: 'user_message', content: 'hi', ts: 1 }),
+        ev({ kind: 'browser_unavailable', reason: 'no-node', ts: 2 }),
+      ],
+      null,
+    );
+    expect(model.items.at(-1)).toEqual({ kind: 'browser_unavailable', reason: 'no-node', seq: 1 });
+  });
+
   test('coalesces streamed agent chunks by messageId into one message', () => {
     const events: ThreadEvent[] = [
       ev({ kind: 'user_message', content: 'hi', ts: 1 }),
@@ -423,6 +434,102 @@ describe('buildThreadRenderModel', () => {
     expect(notice.text).toBe('');
     expect(notice.tone).toBe('error');
     expect(notice.failure).toMatchObject({ reason: 'session-setup' });
+  });
+
+  test('a crash after start renders as a failure notice with the friendly summary and stderr', () => {
+    const events: ThreadEvent[] = [
+      ev({ kind: 'status', status: 'ready', ts: 1 }),
+      ev({
+        kind: 'status',
+        status: 'exited',
+        detail: 'agent exited (127)',
+        failure: {
+          reason: 'exited',
+          exit: { exitCode: 127, signal: null, cause: 'command-not-found' },
+          machineDetail: 'sh: cline: command not found',
+        },
+        ts: 2,
+      }),
+    ];
+    const notice = buildThreadRenderModel(events, null).items.find((i) => i.kind === 'notice');
+    if (notice?.kind !== 'notice') throw new Error('unreachable');
+    expect(notice.tone).toBe('error');
+    expect(notice.text).toBe('agent exited (127)');
+    expect(notice.failure).toMatchObject({
+      reason: 'exited',
+      exit: { cause: 'command-not-found', exitCode: 127 },
+      machineDetail: 'sh: cline: command not found',
+    });
+  });
+
+  test('a crash notice is retired once the thread is ready again', () => {
+    const crash = ev({
+      kind: 'status',
+      status: 'exited',
+      detail: 'agent exited (1)',
+      failure: { reason: 'exited', exit: { exitCode: 1, signal: null, cause: 'unknown' } },
+      ts: 2,
+    });
+    const before = buildThreadRenderModel(
+      [ev({ kind: 'status', status: 'ready', ts: 1 }), crash],
+      null,
+    );
+    expect(before.items.filter((i) => i.kind === 'notice' && i.superseded !== true)).toHaveLength(
+      1,
+    );
+    const after = buildThreadRenderModel(
+      [
+        ev({ kind: 'status', status: 'ready', ts: 1 }),
+        crash,
+        ev({ kind: 'status', status: 'ready', ts: 3 }),
+      ],
+      null,
+    );
+    expect(after.items.filter((i) => i.kind === 'notice' && i.superseded !== true)).toHaveLength(0);
+    const notice = after.items.find((i) => i.kind === 'notice');
+    if (notice?.kind !== 'notice') throw new Error('unreachable');
+    expect(notice.superseded).toBe(true);
+  });
+
+  test('two identical crashes fold into one notice, a different cause does not', () => {
+    const crash = (cause: 'unknown' | 'killed', ts: number) =>
+      ev({
+        kind: 'status',
+        status: 'exited',
+        detail: 'agent exited',
+        failure: { reason: 'exited', exit: { exitCode: null, signal: null, cause } },
+        ts,
+      });
+    const same = buildThreadRenderModel([crash('unknown', 1), crash('unknown', 2)], null);
+    expect(same.items.filter((i) => i.kind === 'notice')).toHaveLength(1);
+    const different = buildThreadRenderModel([crash('unknown', 1), crash('killed', 2)], null);
+    expect(different.items.filter((i) => i.kind === 'notice')).toHaveLength(2);
+  });
+
+  test('a failed resume adds no notice, since the resume banner already reports it', () => {
+    const events: ThreadEvent[] = [
+      ev({ kind: 'status', status: 'ready', ts: 1 }),
+      ev({
+        kind: 'status',
+        status: 'exited',
+        detail: 'resume failed',
+        failure: {
+          reason: 'connect',
+          agentMessage: 'initialize failed',
+          machineDetail: 'npm error code ENOENT',
+        },
+        ts: 2,
+      }),
+    ];
+    expect(buildThreadRenderModel(events, null).items.some((i) => i.kind === 'notice')).toBe(false);
+  });
+
+  test('an exit without failure detail (older servers) still adds no notice', () => {
+    const events: ThreadEvent[] = [
+      ev({ kind: 'status', status: 'ready', ts: 1 }),
+      ev({ kind: 'status', status: 'exited', detail: 'agent exited (1)', ts: 2 }),
+    ];
+    expect(buildThreadRenderModel(events, null).items.some((i) => i.kind === 'notice')).toBe(false);
   });
 
   test('a terminal exit ends a dangling turn (crash-mid-stream transcript)', () => {

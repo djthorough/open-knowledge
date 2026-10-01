@@ -5,11 +5,7 @@ import {
   type TerminalCli,
   type TerminalPlacement,
 } from '@inkeep/open-knowledge-core';
-import type {
-  AttachmentPart,
-  ThreadInfo,
-  ThreadStatus,
-} from '@inkeep/open-knowledge-core/acp/thread-protocol';
+import type { AttachmentPart, ThreadInfo } from '@inkeep/open-knowledge-core/acp/thread-protocol';
 import { useLingui } from '@lingui/react/macro';
 import { SquareTerminalIcon } from 'lucide-react';
 import {
@@ -40,6 +36,7 @@ import {
   HISTORY_PANEL_WIDTH_PX,
   useHistoryPresentationMode,
 } from '@/hooks/use-history-presentation-mode';
+import { useActivityClock } from '@/lib/acp/activity-clock';
 import { isInAppAgentEnabled } from '@/lib/acp/agent-visibility';
 import { detectedHarnessAgents, useAgentCatalogQuery } from '@/lib/acp/catalog';
 import { useEnabledOverrides } from '@/lib/acp/enabled-agents';
@@ -56,6 +53,7 @@ import {
   useDefaultRegisteredAgent,
   useRegisteredAgents,
 } from '@/lib/acp/registered-agents';
+import { formatRelativeActivity } from '@/lib/acp/relative-activity';
 import {
   getAgentThreadClient,
   useAgentThreadConnection,
@@ -106,6 +104,7 @@ const ThreadView = lazy(() =>
 
 import { sendQueuedCommentsInThread, subscribeSendToOpenChat } from '@/comments/open-chat-send';
 import { subscribeToPreferredSessionRequests } from './handoff/preferred-session-events';
+import { notifySignInTerminalExited } from './handoff/sign-in-terminal-events';
 import type { TerminalCommandId } from './handoff/terminal-command-events';
 import {
   type ActiveTerminalInputDetail,
@@ -248,24 +247,102 @@ function chordTargetsHost(hostEl: HTMLElement | null, isWindow: boolean): boolea
   return isWindow || focusInsideHost(hostEl);
 }
 
-function threadStatusDotClass(status: ThreadStatus): string {
-  switch (status) {
-    case 'running':
-      return 'bg-amber-500 animate-pulse';
+type ThreadTabState = 'working' | 'needs-you' | 'ready' | 'stopped' | 'closed';
+
+function threadTabState(info: ThreadInfo): ThreadTabState {
+  if (info.archived === true) return 'closed';
+  switch (info.status) {
     case 'installing':
     case 'spawning':
     case 'authenticating':
-      return 'bg-sky-500 animate-pulse';
+    case 'running':
+      return 'working';
     case 'auth_required':
     case 'awaiting_permission':
-      return 'bg-amber-500';
+      return 'needs-you';
     case 'ready':
-      return 'bg-emerald-500';
+      return 'ready';
     case 'error':
-      return 'bg-red-500';
-    default:
-      return 'bg-muted-foreground';
+    case 'exited':
+      return 'stopped';
+    default: {
+      const exhaustive: never = info.status;
+      return exhaustive;
+    }
   }
+}
+
+const THREAD_TAB_DOT_CLASSES: Record<ThreadTabState, string> = {
+  working: 'bg-sky-500 animate-pulse',
+  'needs-you': 'bg-amber-500',
+  ready: 'bg-emerald-500',
+  stopped: 'bg-red-500',
+  closed: 'bg-muted-foreground',
+};
+
+function useThreadTabStatus(info: ThreadInfo): string {
+  const { t } = useLingui();
+  if (info.archived === true) return t`Not running`;
+  switch (info.status) {
+    case 'installing':
+    case 'spawning':
+      return t`Starting`;
+    case 'authenticating':
+      return t`Signing in`;
+    case 'auth_required':
+      return t`Needs you to sign in`;
+    case 'awaiting_permission':
+      return t`Waiting for your approval`;
+    case 'running':
+      return t`Working`;
+    case 'ready':
+      return t`Ready`;
+    case 'error':
+      return t`Something went wrong`;
+    case 'exited':
+      return t`Stopped`;
+    default: {
+      const exhaustive: never = info.status;
+      return exhaustive;
+    }
+  }
+}
+
+function ThreadTabPeek({
+  info,
+  threadId,
+  label,
+}: {
+  info: ThreadInfo;
+  threadId: string;
+  label: string;
+}): ReactNode {
+  const { t } = useLingui();
+  const now = useActivityClock();
+  const status = useThreadTabStatus(info);
+  const unread = useAgentThreadUnread(threadId);
+  const lastActivity = formatRelativeActivity(info.lastActivityAt, now);
+  return (
+    <span className="flex max-w-64 flex-col gap-0.5 text-start">
+      <span className="break-words font-medium">{label}</span>
+      <span>{status}</span>
+      {unread ? <span>{t`New activity`}</span> : null}
+      <span className="opacity-70">{t`Last activity ${lastActivity}`}</span>
+    </span>
+  );
+}
+
+function ThreadTabScreenReaderStatus({
+  info,
+  threadId,
+}: {
+  info: ThreadInfo;
+  threadId: string;
+}): ReactNode {
+  const { t } = useLingui();
+  const status = useThreadTabStatus(info);
+  const unread = useAgentThreadUnread(threadId);
+  return unread ? t`, ${status}, new activity` : t`, ${status}`;
 }
 
 function terminalTabIcon(): ReactNode {
@@ -314,9 +391,10 @@ function ThreadTabIcon({
         <span
           className={cn(
             '-right-0.5 -bottom-0.5 absolute size-1.5 rounded-full ring-1 ring-background',
-            threadStatusDotClass(info.status),
-            unread && info.status === 'ready' && 'animate-pulse',
+            THREAD_TAB_DOT_CLASSES[threadTabState(info)],
+            unread && threadTabState(info) === 'ready' && 'animate-pulse',
           )}
+          data-thread-state={threadTabState(info)}
           aria-hidden="true"
         />
       ) : null}
@@ -1078,6 +1156,7 @@ export function SessionsHost({
     if (index === -1) return;
     noteUserArrangement();
     const session = current[index];
+    notifySignInExitOnce(session);
     const isLast = current.length === 1;
     pendingActiveKeyRef.current = null;
     if (id === activeSessionIdRef.current) {
@@ -1097,6 +1176,14 @@ export function SessionsHost({
     }
   }
   const closeActiveRef = useRef(() => {});
+  const signInExitNotifiedRef = useRef(new Set<string>());
+  function notifySignInExitOnce(session: (typeof sessionsRef.current)[number] | undefined) {
+    if (session == null || session.kind !== 'terminal') return;
+    const threadId = session.launch?.signInThreadId;
+    if (threadId === undefined || signInExitNotifiedRef.current.has(session.id)) return;
+    signInExitNotifiedRef.current.add(session.id);
+    notifySignInTerminalExited(threadId);
+  }
   const [switchingThreads, setSwitchingThreads] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
@@ -1789,16 +1876,31 @@ export function SessionsHost({
     isShowing,
   ]);
 
-  const tabDescriptors: TerminalTabDescriptor[] = sessions.map((session) => ({
-    id: session.id,
-    label: sessionLabel(session),
-    icon:
-      session.kind === 'terminal' ? (
-        terminalTabIcon()
-      ) : (
-        <ThreadTabIcon info={threadInfoById.get(session.threadId)} threadId={session.threadId} />
-      ),
-  }));
+  const tabDescriptors: TerminalTabDescriptor[] = sessions.map((session) => {
+    const label = sessionLabel(session);
+    if (session.kind === 'terminal') return { id: session.id, label, icon: terminalTabIcon() };
+    const info = threadInfoById.get(session.threadId);
+    return {
+      id: session.id,
+      label,
+      icon: <ThreadTabIcon info={info} threadId={session.threadId} />,
+      tooltip:
+        info === undefined ? undefined : (
+          <ThreadTabPeek info={info} threadId={session.threadId} label={label} />
+        ),
+      tooltipDescription:
+        info === undefined
+          ? undefined
+          : (openedAt) => {
+              const lastActivity = formatRelativeActivity(info.lastActivityAt, openedAt);
+              return t`Last activity ${lastActivity}`;
+            },
+      srStatus:
+        info === undefined ? undefined : (
+          <ThreadTabScreenReaderStatus info={info} threadId={session.threadId} />
+        ),
+    };
+  });
 
   const panelSessions = [...sessions].sort((a, b) => a.ordinal - b.ordinal);
 
@@ -1926,6 +2028,11 @@ export function SessionsHost({
               commandId={session.commandId}
               adoptPtyId={session.adoptPtyId}
               onPtyId={(ptyId) => setSessionPtyId(session.id, ptyId)}
+              onExit={
+                session.launch?.signInThreadId === undefined
+                  ? undefined
+                  : () => notifySignInExitOnce(session)
+              }
               onTitleChange={(title) => setSessionTitle(session.id, title)}
               onClose={() => closeSession(session.id)}
             />

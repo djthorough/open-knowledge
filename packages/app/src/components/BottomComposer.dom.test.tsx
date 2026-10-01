@@ -496,6 +496,19 @@ describe('BottomComposer (shell behavior)', () => {
       restore();
     }
   });
+  test('the Add to prompt tooltip closes once the pointer leaves the button, even toward the tooltip', async () => {
+    const user = userEvent.setup();
+    await renderComposer();
+    const addToPrompt = screen.getByTestId('ask-ai-add-to-prompt');
+
+    await user.hover(addToPrompt);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    await screen.findByRole('tooltip');
+    await user.unhover(addToPrompt);
+
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull(), { timeout: 200 });
+  });
 });
 
 describe('BottomComposer (dispatch + picker + sticky default)', () => {
@@ -1246,6 +1259,24 @@ describe('BottomComposer (conflict footer stacking)', () => {
 });
 
 describe('BottomComposer (failure + defensive guards)', () => {
+  test.each(['setup-canceled', 'superseded'] as const)(
+    '%s preserves the typed prompt for another send',
+    async (reason) => {
+      dispatchImpl = () => Promise.resolve({ ok: false, reason });
+
+      await renderComposer();
+      fireEvent.change(getInput(), { target: { value: 'condense this doc' } });
+      fireEvent.click(screen.getByTestId('ask-ai-send'));
+
+      await waitFor(() => expect(dispatchCalls).toHaveLength(1));
+      await waitFor(() =>
+        expect((screen.getByTestId('ask-ai-send') as HTMLButtonElement).disabled).toBe(false),
+      );
+      expect(getInput().value).toBe('condense this doc');
+      expect(recordAskedAiSpy).not.toHaveBeenCalled();
+    },
+  );
+
   test('an unsuccessful ({ok:false}) dispatch still clears the field and adds no bespoke toast', async () => {
     dispatchImpl = () => Promise.resolve({ ok: false });
 

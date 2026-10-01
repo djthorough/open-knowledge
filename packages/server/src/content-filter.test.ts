@@ -20,19 +20,6 @@ import {
 } from './content-filter.ts';
 import { installTestLoggers, loggerFactory } from './logger.ts';
 
-type ExclusionReadOpts = NonNullable<Parameters<ContentFilter['isExcluded']>[1]>;
-type PathReadOpts = NonNullable<Parameters<ContentFilter['isPathIgnored']>[1]>;
-
-// @ts-expect-error — sync admission and Show All Files are mutually exclusive.
-const _combinedSyncAndBypass: ExclusionReadOpts = {
-  bypassFilters: true,
-  syncScope: { pathBase: 'project' },
-};
-// @ts-expect-error — asset serving never accepts the sync-only capability.
-const _syncScopedAssetServe: PathReadOpts = { syncScope: { pathBase: 'project' } };
-void _combinedSyncAndBypass;
-void _syncScopedAssetServe;
-
 describe('ContentFilter', () => {
   let projectDir: string;
   let xdgDir: string;
@@ -2028,6 +2015,20 @@ describe('ContentFilter', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('unreachable');
       expect(result.nestedFileCount).toBe(2);
+    });
+
+    test('skips nested ignore files under any case of node_modules', async () => {
+      mkdirSync(join(projectDir, 'subdir'));
+      writeFileSync(join(projectDir, 'subdir', '.okignore'), 'private.md\n');
+      mkdirSync(join(projectDir, 'NODE_MODULES', 'p'), { recursive: true });
+      writeFileSync(join(projectDir, 'NODE_MODULES', 'p', '.gitignore'), 'tmp/\n');
+
+      const filter = createContentFilter({ projectDir, contentDir: projectDir });
+      const result = await filter.rebuildIgnorePatterns();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('unreachable');
+      expect(result.nestedFileCount).toBe(1);
     });
 
     test('fires onAfterRebuild on success', async () => {

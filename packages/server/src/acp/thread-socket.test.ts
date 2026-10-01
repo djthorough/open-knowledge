@@ -5,7 +5,7 @@ import type {
   ThreadEvent,
   ThreadServerFrame,
 } from '@inkeep/open-knowledge-core/acp/thread-protocol';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, onTestFailed, test } from 'vitest';
 import type { AgentSessionManager } from '../agent-sessions.ts';
 import { getLogger } from '../logger.ts';
 import { AcpPermissionStore } from './permissions.ts';
@@ -62,7 +62,10 @@ process.stdin.on('data', (chunk) => {
     if (msg.method === 'initialize') {
       const agentCapabilities = {};
       if (caps.includes('resume')) agentCapabilities.sessionCapabilities = { resume: {} };
-      reply({ protocolVersion: 1, agentCapabilities });
+      const authMethods = caps.includes('terminal-login')
+        ? [{ id: 'cli-login', name: 'CLI login', type: 'terminal', args: ['login'], env: { FROM_METHOD: '1' } }]
+        : undefined;
+      reply({ protocolVersion: 1, agentCapabilities, ...(authMethods ? { authMethods } : {}) });
     } else if (msg.method === 'session/new') {
       reply({ sessionId: 'sess-fixed' });
     } else if (msg.method === 'session/prompt') {
@@ -104,6 +107,10 @@ interface FakeSocket {
   frames: ThreadServerFrame[];
   emit(raw: string): void;
   close(): void;
+  nextFrame<T extends ThreadServerFrame['op']>(
+    op: T,
+    matches?: (frame: Extract<ThreadServerFrame, { op: T }>) => boolean,
+  ): Promise<Extract<ThreadServerFrame, { op: T }>>;
   awaitFrame<T extends ThreadServerFrame['op']>(
     op: T,
     ms?: number,
@@ -112,10 +119,12 @@ interface FakeSocket {
 
 function attachFakeSocket(manager: AcpThreadManager): FakeSocket {
   const frames: ThreadServerFrame[] = [];
+  const frameListeners = new Set<(frame: ThreadServerFrame) => void>();
   const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
   const ws = {
     send(data: string) {
       frames.push(JSON.parse(data) as ThreadServerFrame);
+      for (const listener of frameListeners) listener(frames[frames.length - 1]);
     },
     close() {},
     on(event: string, listener: (...args: unknown[]) => void) {
@@ -132,7 +141,33 @@ function attachFakeSocket(manager: AcpThreadManager): FakeSocket {
     },
     close: () => {
       for (const l of listeners.get('close') ?? []) l();
+      frameListeners.clear();
     },
+    nextFrame: (op, matches) =>
+      new Promise((resolve, reject) => {
+        let settled = false;
+        const listener = (frame: ThreadServerFrame) => {
+          if (frame.op === 'error' && op !== 'error') {
+            settled = true;
+            frameListeners.delete(listener);
+            reject(new Error(`${frame.code}: ${frame.message}`));
+            return;
+          }
+          if (frame.op !== op) return;
+          const matched = frame as Extract<ThreadServerFrame, { op: typeof op }>;
+          if (matches !== undefined && !matches(matched)) return;
+          settled = true;
+          frameListeners.delete(listener);
+          resolve(matched);
+        };
+        frameListeners.add(listener);
+        onTestFailed(() => {
+          if (settled) return;
+          throw new Error(
+            `no ${matches === undefined ? '' : 'matching '}'${op}' frame; saw: ${frames.map((f) => f.op).join(',')}`,
+          );
+        });
+      }),
     awaitFrame: async (op, ms = 20_000) => {
       const deadline = Date.now() + ms;
       let cursor = 0;
@@ -370,9 +405,9 @@ describe('/collab/thread socket — history ops', () => {
     socket.close();
   }, 45_000);
 
-  test('rename round-trips live and archived; a manual title survives first-prompt adoption', async () => {
+  test('terminal_auth_launch answers the reqId with the composed launch, and refuses an unknown method', async () => {
     const localDir = tmp();
-    writeFixtureAgent(localDir, '');
+    writeFixtureAgent(localDir, 'terminal-login');
     const manager = makeManager(tmp(), localDir);
     await manager.init();
     const socket = attachFakeSocket(manager);
@@ -384,39 +419,66 @@ describe('/collab/thread socket — history ops', () => {
     const threadId = created.info.threadId;
     await waitStatus(manager, threadId, 'ready');
 
-    socket.emit(JSON.stringify({ op: 'rename', threadId, title: 'Roadmap rewrite' }));
-    const deadline = Date.now() + 10_000;
-    while (manager.getInfo(threadId)?.title !== 'Roadmap rewrite') {
-      if (Date.now() > deadline) throw new Error('rename never applied');
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    const infoFrames = socket.frames.filter(
-      (f): f is Extract<ThreadServerFrame, { op: 'info' }> => f.op === 'info',
+    socket.emit(
+      JSON.stringify({ op: 'terminal_auth_launch', threadId, reqId: 'tl1', methodId: 'cli-login' }),
     );
-    expect(infoFrames.some((f) => f.info.title === 'Roadmap rewrite')).toBe(true);
+    const ready = await socket.awaitFrame('terminal_auth_launch_ready');
+    expect(ready.reqId).toBe('tl1');
+    expect(ready.launch).toMatchObject({
+      executable: 'node',
+      args: [join(localDir, 'fixture-agent.mjs'), 'login'],
+      env: { FAKE_CAPS: 'terminal-login', FROM_METHOD: '1' },
+      pathPrepend: [],
+    });
 
+    socket.emit(
+      JSON.stringify({ op: 'terminal_auth_launch', threadId, reqId: 'tl2', methodId: 'missing' }),
+    );
+    const err = await socket.awaitFrame('error');
+    expect(err.code).toBe('not-ready');
+    expect(err.reqId).toBe('tl2');
+    socket.close();
+  }, 45_000);
+
+  test('rename round-trips live and archived; a manual title survives first-prompt adoption', async () => {
+    const localDir = tmp();
+    writeFixtureAgent(localDir, '');
+    const manager = makeManager(tmp(), localDir);
+    await manager.init();
+    const socket = attachFakeSocket(manager);
+    const createdFrame = socket.nextFrame('created');
+    const readyFrame = socket.nextFrame('info', (frame) => frame.info.status === 'ready');
+
+    socket.emit(
+      JSON.stringify({ op: 'create', reqId: 'c1', agent: { source: 'custom', id: 'fixture' } }),
+    );
+    const [created] = await Promise.all([createdFrame, readyFrame]);
+    const threadId = created.info.threadId;
+
+    const liveRename = socket.nextFrame('info');
+    socket.emit(JSON.stringify({ op: 'rename', threadId, title: 'Roadmap rewrite' }));
+    expect((await liveRename).info.title).toBe('Roadmap rewrite');
+
+    const firstTurn = socket.nextFrame('events', (frame) =>
+      frame.events.some((event) => event.kind === 'turn_ended'),
+    );
     socket.emit(JSON.stringify({ op: 'prompt', threadId, reqId: 'p1', content: 'do the thing' }));
-    await waitStatus(manager, threadId, 'ready');
+    await firstTurn;
     expect(manager.getInfo(threadId)?.title).toBe('Roadmap rewrite');
 
+    const closed = socket.nextFrame('threads');
     socket.emit(JSON.stringify({ op: 'close', threadId }));
-    await waitStatus(manager, threadId, 'exited');
+    await closed;
     const lastActivityAt = manager.getInfo(threadId)?.lastActivityAt;
+    const archivedRename = socket.nextFrame('info');
     socket.emit(JSON.stringify({ op: 'rename', threadId, title: 'Archived and renamed' }));
-    const deadline2 = Date.now() + 10_000;
-    while (
-      !socket.frames.some(
-        (frame) => frame.op === 'info' && frame.info.title === 'Archived and renamed',
-      )
-    ) {
-      if (Date.now() > deadline2) throw new Error('archived rename never applied');
-      await new Promise((r) => setTimeout(r, 25));
-    }
+    expect((await archivedRename).info.title).toBe('Archived and renamed');
     expect(manager.getInfo(threadId)?.archived).toBe(true);
     expect(manager.getInfo(threadId)?.lastActivityAt).toBe(lastActivityAt);
 
+    const unknownThread = socket.nextFrame('error');
     socket.emit(JSON.stringify({ op: 'rename', threadId: 'nope', title: 'x' }));
-    const err = await socket.awaitFrame('error');
+    const err = await unknownThread;
     expect(err.code).toBe('unknown-thread');
     socket.close();
   }, 45_000);
@@ -695,7 +757,7 @@ describe('/collab/thread socket — crash-recovered replay bound', () => {
 
   test('subscribed announces the durable log end, ahead of every replayed event', async () => {
     const localDir = tmp();
-    const threadId = 'crash-stale';
+    const threadId = '0a1b2c3d-0000-4000-8000-0000000000c1';
     writeCrashStaleThread(localDir, threadId, MULTI_CHUNK_EVENTS, 2);
     const manager = makeManager(tmp(), localDir);
     await manager.init();
@@ -728,7 +790,7 @@ describe('/collab/thread socket — crash-recovered replay bound', () => {
 
   test('a failed log resolution is retried rather than cached for the process', async () => {
     const localDir = tmp();
-    const threadId = 'unreadable-log';
+    const threadId = '0a1b2c3d-0000-4000-8000-0000000000c2';
     const events: ThreadEvent[] = [{ kind: 'user_message', content: 'hello', ts: 1 }];
     writeCrashStaleThread(localDir, threadId, events, 0);
     const logPath = join(localDir, 'threads', `${threadId}.ndjson`);

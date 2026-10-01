@@ -15,8 +15,8 @@ msgstr ""
 
 #: src/components/acp/AttachFilesButton.tsx
 #: src/components/ComposerAddMenu.tsx
-msgid " · references only (no embedded contents)"
-msgstr " · 참조만(내용을 포함하지 않음)"
+msgid " · project files as references"
+msgstr " · 프로젝트 파일은 참조로"
 
 #: src/components/settings/HotkeysSection.tsx
 msgid " or "
@@ -33,6 +33,14 @@ msgstr " 선택 영역을 복원했습니다."
 #: src/components/settings/LintingSection.tsx
 msgid "— except"
 msgstr "제외"
+
+#: src/components/SessionsHost.tsx
+msgid ", {status}"
+msgstr ", {status}"
+
+#: src/components/SessionsHost.tsx
+msgid ", {status}, new activity"
+msgstr ", {status}, 새 활동"
 
 #: src/components/acp/ThreadView.tsx
 msgid "… earlier output trimmed"
@@ -391,6 +399,11 @@ msgstr "{0}개 선택됨 (전체 {1}개 프로젝트 중)"
 msgid "{0} of {1} selected"
 msgstr "{0}/{1} 선택됨"
 
+#. placeholder {0}: threadIds.length
+#: src/comments/CommentSendFooter.tsx
+msgid "{0} of {totalCount}"
+msgstr "{0}/{totalCount}"
+
 #. placeholder {0}: resolvedTarget.displayName
 #: src/components/BottomComposer.tsx
 #: src/components/empty-state/CreatePromptComposer.tsx
@@ -614,6 +627,10 @@ msgstr "{agentName}에 로그인이 필요합니다."
 msgid "{agentName} reported: {headline}"
 msgstr "{agentName} 보고: {headline}"
 
+#: src/components/acp/ThreadView.tsx
+msgid "{agentName} stopped unexpectedly."
+msgstr "{agentName}이(가) 예기치 않게 중지되었습니다."
+
 #: src/components/acp/thread-auth-offer.ts
 msgid "{agentName} stopped with an error."
 msgstr "{agentName}이(가) 오류로 중지되었습니다."
@@ -675,6 +692,22 @@ msgstr "{conflictCount, plural, other {충돌 #개}}"
 #: src/components/SyncStatusBadge.tsx
 msgid "{conflictCount, plural, one {# file conflicted} other {# files conflicted}}"
 msgstr "{conflictCount, plural, other {충돌한 파일 #개}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} is larger than {capKb} KB, so it can't be sent with the message. Add it to your project, then mention it with @.} other {{files} are each larger than {capKb} KB, so they can't be sent with the message. Add them to your project, then mention them with @.}}"
+msgstr "{count, plural, other {{files}은(는) {capKb} KB를 넘어 메시지와 함께 보낼 수 없습니다. 먼저 프로젝트에 추가한 다음 @로 언급하세요.}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} is larger than {capKb} KB, so it can't be sent with the message. Mention it with @ once it's in your project.} other {{files} are each larger than {capKb} KB, so they can't be sent with the message. Mention them with @ once they're in your project.}}"
+msgstr "{count, plural, other {{files}은(는) {capKb} KB를 넘어 메시지와 함께 보낼 수 없습니다. 프로젝트에 있으면 @로 언급하세요.}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} isn't a text file, so it can't be sent with the message. Add it to your project, then mention it with @.} other {{files} aren't text files, so they can't be sent with the message. Add them to your project, then mention them with @.}}"
+msgstr "{count, plural, other {{files}은(는) 텍스트 파일이 아니라서 메시지와 함께 보낼 수 없습니다. 먼저 프로젝트에 추가한 다음 @로 언급하세요.}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} isn't a text file, so it can't be sent with the message. Mention it with @ once it's in your project.} other {{files} aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.}}"
+msgstr "{count, plural, other {{files}은(는) 텍스트 파일이 아니라서 메시지와 함께 보낼 수 없습니다. 프로젝트에 있으면 @로 언급하세요.}}"
 
 #: src/comments/comment-chips.tsx
 msgid "{count, plural, one {# comment} other {# comments}}"
@@ -745,7 +778,7 @@ msgstr "스킬 {count}개"
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr "{days, plural, other {#일 전}}"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{days}d ago"
 msgstr "{days}일 전"
 
@@ -809,7 +842,6 @@ msgstr "{displayName} ({bin}) 미설치 또는 PATH 미등록"
 #: src/components/empty-state/CreatePromptComposer.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 msgid "{displayName} CLI"
 msgstr "{displayName} CLI"
@@ -880,10 +912,10 @@ msgstr "{folderCount, plural, other {폴더}}"
 msgid "{formatted} GitHub stars"
 msgstr "{formatted} GitHub 스타"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/ActivityModeContent.tsx
 #: src/components/ActivityPanelFileRow.tsx
 #: src/components/SyncStatusBadge.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{hours}h ago"
 msgstr "{hours}시간 전"
 
@@ -965,25 +997,17 @@ msgstr "{server} MCP 서버의 {mcpTool}"
 msgid "{mins, plural, one {# min ago} other {# min ago}}"
 msgstr "{mins, plural, other {#분 전}}"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/ActivityModeContent.tsx
 #: src/components/ActivityPanelBurstRow.tsx
 #: src/components/ActivityPanelFileRow.tsx
 #: src/components/SyncStatusBadge.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{minutes}m ago"
 msgstr "{minutes}분 전"
 
 #: src/components/TerminalNewChatButton.tsx
 msgid "{name} CLI"
 msgstr "{name} CLI"
-
-#: src/lib/acp/image-attachment.ts
-msgid "{name} has no resolvable path — the agent can only read files inside the workspace."
-msgstr "{name}의 경로를 확인할 수 없습니다. 에이전트는 워크스페이스 안의 파일만 읽을 수 있습니다."
-
-#: src/lib/acp/image-attachment.ts
-msgid "{name} is outside the workspace. Move it into your project first."
-msgstr "{name}이(가) 워크스페이스 밖에 있습니다. 먼저 프로젝트 안으로 옮기세요."
 
 #: src/components/SkillsSidebarSection.tsx
 msgid "{name} moved, but its pin did not. Pin it again after settings finish loading."
@@ -1001,10 +1025,9 @@ msgstr "{omitted, plural, other {표시되지 않은 속성 변경 #개 더}}"
 msgid "{openedWorktreeCount, plural, one {worktree} other {worktrees}}"
 msgstr "{openedWorktreeCount, plural, one {워크트리} other {워크트리}}"
 
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{outsideWorkspaceCount, plural, one {Skipped # file outside the workspace.} other {Skipped # files outside the workspace.}}"
-msgstr "{outsideWorkspaceCount, plural, other {워크스페이스 외부의 파일 #개를 건너뛰었습니다.}}"
+#: src/lib/acp/image-attachment.ts
+msgid "{others, plural, one {# other} other {# others}}"
+msgstr "{others, plural, other {다른 파일 #개}}"
 
 #: src/components/PublishToGitHubDialog.tsx
 msgid "{owner}/{name} already exists"
@@ -1112,11 +1135,6 @@ msgstr "{sizeText} · 시크릿이 비공개 처리됨 · {fileCount, plural, ot
 msgid "{skillCount, plural, one {skill} other {skills}}"
 msgstr "{skillCount, plural, other {스킬}}"
 
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{skipTotal, plural, one {Skipped # file that couldn't be attached.} other {Skipped # files that couldn't be attached.}}"
-msgstr "{skipTotal, plural, other {첨부할 수 없는 파일 #개를 건너뛰었습니다.}}"
-
 #. placeholder {0}: BASE16_SLOT_ROLES[slot]
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "{slot} color — {0}"
@@ -1170,11 +1188,6 @@ msgstr "{total, plural, other {#개 문제}}"
 #: src/components/FileTree.tsx
 msgid "{truncatedShownCount, plural, one {Showing the first item in one folder — the rest of that folder is hidden.} other {Showing the first {formattedCount} items in one folder — the rest of that folder is hidden.}}"
 msgstr "{truncatedShownCount, plural, other {한 폴더의 첫 {formattedCount}개 항목만 표시됩니다. 해당 폴더의 나머지 항목은 숨겨져 있습니다.}}"
-
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{unknownPathCount, plural, one {Skipped # file — this browser can't attach files by path.} other {Skipped # files — this browser can't attach files by path.}}"
-msgstr "{unknownPathCount, plural, other {파일 #개를 건너뛰었습니다 — 이 브라우저는 경로로 파일을 첨부할 수 없습니다.}}"
 
 #: src/components/FileTree.tsx
 msgid "{uploadedCount, plural, one {Uploaded one file} other {Uploaded {uploadedCount} files}}"
@@ -1242,6 +1255,10 @@ msgstr "# 줄마다 패턴 하나를 작성합니다.\n"
 "#   drafts/\n"
 "#   *.draft.md\n"
 "#   !keep.md"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "#{position} in the merge queue"
+msgstr "병합 큐 {position}번째"
 
 #: src/components/GraphLegend.tsx
 msgid "+ {overflow} more"
@@ -1351,6 +1368,14 @@ msgstr "{shareBranch} 브랜치가 이미 있습니다. 대신 전환기에서 �
 msgid "A branch with that name already exists. Open its worktree from the switcher instead."
 msgstr "해당 이름의 브랜치가 이미 있습니다. 대신 전환기에서 해당 워크트리를 여세요."
 
+#: src/lib/acp/exit-summary.ts
+msgid "A command the agent needs could not be run (exit code {code}). Check that it is executable and that you have permission to run it."
+msgstr "에이전트에 필요한 명령을 실행할 수 없습니다(종료 코드 {code}). 실행 가능한 파일인지, 실행 권한이 있는지 확인하세요."
+
+#: src/lib/acp/exit-summary.ts
+msgid "A command the agent needs was not found (exit code {code}). Check that the agent's dependencies are installed and on your PATH."
+msgstr "에이전트에 필요한 명령을 찾을 수 없습니다(종료 코드 {code}). 에이전트의 종속성이 설치되어 있고 PATH에 있는지 확인하세요."
+
 #: src/components/SkillInstallMenu.tsx
 msgid "A copy is a real folder of its own, and OK keeps it in step with the source: edit the skill here and every copy is refreshed. That stops the moment you hand-edit a copy outside OK — from then on it goes its own way and shows up as a separate skill."
 msgstr "복사본은 독립된 실제 폴더이며, OK가 소스와 동기화합니다. 여기에서 스킬을 편집하면 모든 복사본이 새로고침됩니다. OK 외부에서 복사본을 직접 편집하는 순간 동기화가 중단됩니다. 그때부터 복사본은 별도 경로로 작동하며 별도 스킬로 표시됩니다."
@@ -1417,6 +1442,10 @@ msgstr "{0} 왼쪽의 새 패널"
 #: src/components/EditorWorkspace.tsx
 msgid "a new pane to the right of {0}"
 msgstr "{0} 오른쪽의 새 패널"
+
+#: src/components/handoff/useHandoffDispatch.ts
+msgid "A newer handoff replaced this retry."
+msgstr "새로운 핸드오프가 이 재시도를 대체했습니다."
 
 #: src/components/settings/SettingsDialogErrorBoundary.tsx
 #: src/components/TerminalGate.tsx
@@ -2098,6 +2127,10 @@ msgstr "적용 대상"
 msgid "Applies to (globs — leading ! excludes; empty means every doc)"
 msgstr "적용 대상 (glob, 앞의 !는 제외, 비워 두면 모든 문서)"
 
+#: src/components/settings/settings-fields.ts
+msgid "Applies to all projects on this machine, in Claude Code and Codex chats in the Agents panel started after you turn it on. The agent can open pages, click, type, and take screenshots in its own Google Chrome window with a fresh profile. Needs Google Chrome and Node.js installed. Every browser action asks for your approval, with no option to always allow it, unless the agent's own mode or permission settings skip approvals."
+msgstr "이 컴퓨터의 모든 프로젝트에 적용되며, 켠 뒤에 시작한 에이전트 패널의 Claude Code 및 Codex 채팅에 적용됩니다. 에이전트는 새 프로필을 쓰는 자체 Google Chrome 창에서 페이지를 열고, 클릭하고, 입력하고, 스크린샷을 찍을 수 있습니다. Google Chrome과 Node.js가 설치되어 있어야 합니다. 에이전트 자체 모드나 권한 설정이 승인을 건너뛰지 않는 한, 모든 브라우저 작업은 승인을 요청하며 항상 허용하는 선택지는 없습니다."
+
 #: src/components/settings/TerminalSection.tsx
 msgid "Applies to all projects on this machine. Claude and Codex started from the built-in terminal, and any agent in an in-app Agents panel chat, auto-approve OpenKnowledge's read and write tools (Claude also auto-runs \"ok open\"). Deleting, moving, sharing, importing or installing skills, other commands, and non-OpenKnowledge file edits still ask. In the terminal, Cursor, OpenCode, and Pi are unaffected. Best-effort per agent."
 msgstr "이 컴퓨터의 모든 프로젝트에 적용됩니다. 내장 터미널에서 시작한 Claude와 Codex, 그리고 앱 내 에이전트 패널 채팅의 모든 에이전트는 OpenKnowledge의 읽기 및 쓰기 도구를 자동으로 승인합니다(Claude는 \"ok open\"도 자동 실행). 스킬 삭제·이동·공유·가져오기·설치, 기타 명령, OpenKnowledge 외 파일 편집은 여전히 확인을 요청합니다. 터미널에서는 Cursor, OpenCode, Pi에 영향이 없습니다. 에이전트별 최선 노력."
@@ -2150,6 +2183,10 @@ msgstr "승인됨"
 msgid "Approved — {optionName}"
 msgstr "승인됨: {optionName}"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Approved and ready to merge"
+msgstr "승인되어 병합할 수 있음"
+
 #: src/components/FileTree.tsx
 msgid "Are you sure you want to convert this file into a template? The original file will be deleted. This action cannot be undone."
 msgstr "이 파일을 템플릿으로 변환하시겠습니까? 원본 파일은 삭제됩니다. 이 작업은 취소할 수 없습니다."
@@ -2195,7 +2232,6 @@ msgstr "{0} CLI 질문"
 #: src/components/handoff/agent-launcher-labels.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Ask {agentName}"
 msgstr "{agentName}에게 질문"
 
@@ -2345,6 +2381,10 @@ msgstr "자동 수정 ({count})"
 msgid "Auto-fix applies only to problems with a known mechanical fix."
 msgstr "자동 수정은 기계적으로 수정할 수 있는 문제가 알려진 경우에만 적용됩니다."
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Auto-merge is on"
+msgstr "자동 병합 켜짐"
+
 #: src/components/FolderTimelineCard.tsx
 #: src/components/TimelinePanel.tsx
 msgid "Auto-save"
@@ -2460,6 +2500,10 @@ msgstr "동기화하기 전에 git 커밋에 사용할 사용자 정보를 설�
 msgid "Before you go, mind sharing why?"
 msgstr "떠나기 전에 이유를 알려주시겠어요?"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Behind the base branch"
+msgstr "기본 브랜치보다 뒤처짐"
+
 #: src/editor/slash-command/items.tsx
 msgid "Below"
 msgstr "아래"
@@ -2497,6 +2541,10 @@ msgstr "Blob 실행"
 #: src/editor/slash-command/component-items.tsx
 msgid "Block math equation rendered with KaTeX from a LaTeX source string."
 msgstr "LaTeX 소스 문자열에서 KaTeX로 렌더링되는 블록 수식입니다."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Blocked from merging"
+msgstr "병합이 차단됨"
 
 #: src/components/TemplateForm.tsx
 msgid "Blog post"
@@ -2789,6 +2837,10 @@ msgstr "외부에서 변경됨"
 msgid "Changed outside OK since it last wrote here — the state shown is what's on disk now"
 msgstr "마지막으로 OK가 여기에 쓴 후 외부에서 변경되었습니다. 표시된 상태는 현재 디스크에 있는 내용입니다"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Changes requested"
+msgstr "변경 요청됨"
+
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "Changes save automatically to this theme."
 msgstr "변경사항이 이 테마에 자동으로 저장됩니다."
@@ -2800,6 +2852,10 @@ msgstr "변경사항이 자동으로 저장됩니다."
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "Changes saved automatically."
 msgstr "변경사항이 자동으로 저장되었습니다."
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Changes were saved, but OpenKnowledge could not confirm a connection to {handoffLabel}. Check the MCP server settings for this app, then select Save changes to check again."
+msgstr "변경 사항을 저장했지만 OpenKnowledge에서 {handoffLabel} 연결을 확인하지 못했습니다. 이 앱의 MCP 서버 설정을 확인한 다음 변경 사항 저장을 선택하여 다시 확인하세요."
 
 #: src/components/settings/SearchSection.tsx
 msgid "Character budget per indexing request"
@@ -2857,6 +2913,10 @@ msgstr "확인한 사람: {0}"
 #: src/components/SkillEditorActions.tsx
 msgid "Checking"
 msgstr "확인 중"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Checking connection to {checkingLabel}…"
+msgstr "{checkingLabel} 연결 확인 중…"
 
 #: src/components/BottomComposer.tsx
 msgid "Checking for agents"
@@ -2918,6 +2978,10 @@ msgstr "확인 중…"
 #: src/editor/slash-command/items.tsx
 msgid "Checklist with checkboxes."
 msgstr "체크박스가 있는 체크리스트입니다."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Checks are running"
+msgstr "검사 실행 중"
 
 #: src/lib/acp/tool-call-display.ts
 msgid "Checks documents for markdown problems and can fix them"
@@ -3239,6 +3303,11 @@ msgstr "창 닫기"
 msgid "Close Window"
 msgstr "창 닫기"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Closed"
+msgstr "닫힘"
+
 #: src/components/GraphLegend.tsx
 msgid "Clusters"
 msgstr "클러스터"
@@ -3483,7 +3552,6 @@ msgstr "구성 경고"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/SessionsHost.tsx
 #: src/components/settings/SettingsDialogShell.tsx
 #: src/components/TerminalNewChatButton.tsx
@@ -5125,10 +5193,6 @@ msgstr "{file} 비활성화"
 msgid "Disable {id}"
 msgstr "{id} 비활성화"
 
-#: src/components/settings/LinkPreviewsSection.tsx
-msgid "Disable external link previews"
-msgstr "외부 링크 미리보기 사용 안 함"
-
 #: src/components/settings/SearchSection.tsx
 msgid "Disable semantic search"
 msgstr "의미 기반 검색 사용 안 함"
@@ -5256,6 +5320,10 @@ msgstr "문서 응답이 예상한 형식과 일치하지 않습니다."
 msgid "Documents tagged <0>#{tagName}</0>"
 msgstr "<0>#{tagName}</0> 태그가 지정된 문서"
 
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Don't ask again when opening this app without setup in this project"
+msgstr "이 프로젝트에서 설정 없이 이 앱을 열 때 다시 묻지 않기"
+
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "Don't see <0>Skills</0>? Enable <1>Settings <2/> Capabilities <3/> Code execution and file creation</1> first."
 msgstr "<0>Skills</0> 미표시? 먼저 <1>설정 <2/> 기능 <3/> 코드 실행 및 파일 생성</1> 활성화."
@@ -5316,6 +5384,11 @@ msgstr "{0} {1} 다운로드 중…"
 #: src/components/ShareReceiveDialog.tsx
 msgid "Downloads a fresh copy from GitHub."
 msgstr "GitHub에서 최신 사본을 다운로드합니다."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Draft"
+msgstr "초안"
 
 #: src/components/empty-state/use-create-suggestions.ts
 msgid "Draft a spec"
@@ -5718,10 +5791,6 @@ msgstr "자동(풀만) 활성화"
 msgid "Enable Auto (Pull only)?"
 msgstr "자동(풀만)을 활성화할까요?"
 
-#: src/components/settings/LinkPreviewsSection.tsx
-msgid "Enable external link previews"
-msgstr "외부 링크 미리보기 사용"
-
 #: src/components/settings/LintingSection.tsx
 msgid "Enable indexes"
 msgstr "인덱스 사용"
@@ -6010,7 +6079,6 @@ msgstr "외부"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 msgid "External apps"
 msgstr "외부 앱"
@@ -6022,6 +6090,10 @@ msgstr "외부 링크"
 #: src/components/settings/LinkPreviewsSection.tsx
 msgid "External link previews"
 msgstr "외부 링크 미리보기"
+
+#: src/components/settings/LinkPreviewsSection.tsx
+msgid "External link previews and GitHub reference cards"
+msgstr "외부 링크 미리보기 및 GitHub 참조 카드"
 
 #: src/components/settings/LinkPreviewsSection.tsx
 msgid "External link previews show a card with the site name, page title, and description when you hover a link."
@@ -6969,6 +7041,10 @@ msgstr "하드 줄바꿈"
 msgid "Hard to use"
 msgstr "사용하기 어려움"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Has merge conflicts"
+msgstr "병합 충돌 있음"
+
 #: src/components/acp/working-status.ts
 msgid "Having a look around…"
 msgstr "둘러보는 중…"
@@ -7441,6 +7517,10 @@ msgstr "로그 문서에서는 항목 제목을 ISO YYYY-MM-DD 날짜로 시작�
 msgid "In a subfolder"
 msgstr "하위 폴더에서"
 
+#: src/components/settings/LinkPreviewsSection.tsx
+msgid "In an agent chat, hovering a link to a GitHub pull request or issue asks GitHub for its status, signed in as you when OpenKnowledge can use your GitHub sign-in."
+msgstr "에이전트 채팅에서 GitHub 풀 리퀘스트나 이슈 링크 위에 마우스를 올리면 GitHub에 상태를 요청하며, OpenKnowledge가 GitHub 로그인을 사용할 수 있으면 사용자로 로그인한 상태로 요청합니다."
+
 #: src/components/settings/LintingSection.tsx
 msgid "In an index document: entries sit under a section heading and each one carries a link. Prose around the lists is fine."
 msgstr "인덱스 문서에서는 항목이 섹션 제목 아래에 있고 각 항목에 링크가 있습니다. 목록 주변에 설명문을 작성해도 됩니다."
@@ -7449,7 +7529,6 @@ msgstr "인덱스 문서에서는 항목이 섹션 제목 아래에 있고 각 �
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 #: src/components/TerminalNewChatButton.tsx
 msgid "In app"
@@ -7466,6 +7545,14 @@ msgstr "Git 프로젝트에서 Open Knowledge는 다음 재빌드 전에 동시�
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "In the Claude Desktop App"
 msgstr "Claude Desktop App에서"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "In the merge queue"
+msgstr "병합 큐에 있음"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "In the merge queue, but it can't merge"
+msgstr "병합 큐에 있지만 병합할 수 없음"
 
 #: src/components/acp/ThreadView.tsx
 msgid "In the plan above, please "
@@ -7826,10 +7913,6 @@ msgstr "설치 위치"
 msgid "installs:"
 msgstr "설치 항목:"
 
-#: src/components/handoff/OpenInAgentMenu.tsx
-msgid "Instruction for the AI"
-msgstr "AI용 지침"
-
 #: src/components/settings/IntegrationsSection.tsx
 #: src/components/settings/SettingsDialogShell.tsx
 msgid "Integrations"
@@ -7930,12 +8013,12 @@ msgstr "앵커 텍스트로 이동"
 msgid "Jump to the markdown source for the block at the cursor, centered and highlighted."
 msgstr "커서가 있는 블록의 Markdown 소스로 이동해 가운데에 표시하고 강조합니다."
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/FolderOverview.tsx
 #: src/components/FolderTimelineCard.tsx
 #: src/components/SyncStatusBadge.tsx
 #: src/components/TimelinePanel.tsx
 #: src/editor/link-preview/InternalDocPreviewCard.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "just now"
 msgstr "방금"
 
@@ -8032,6 +8115,10 @@ msgstr "레이블 <0>(표시되는 링크 텍스트)</0>"
 msgid "Language"
 msgstr "언어"
 
+#: src/components/SessionsHost.tsx
+msgid "Last activity {lastActivity}"
+msgstr "마지막 활동: {lastActivity}"
+
 #: src/components/ActivityPanelBurstRow.tsx
 msgid "Latest edit"
 msgstr "최신 편집"
@@ -8070,6 +8157,10 @@ msgstr "어떤 폴더 깊이에 있든 log.md 또는 log.mdx 안에 작성된 �
 msgid "Leave these comments out of this message"
 msgstr "이 메시지에서 댓글 제외"
 
+#: src/components/settings/settings-fields.ts
+msgid "Let agent chats use a browser"
+msgstr "에이전트 채팅에서 브라우저를 사용하도록 허용합니다"
+
 #: src/components/settings/TerminalSection.tsx
 msgid "Let agents use OpenKnowledge without asking"
 msgstr "에이전트가 확인하지 않고 OpenKnowledge를 사용하도록 허용합니다"
@@ -8105,6 +8196,10 @@ msgstr "각 요청에 담기는 전체 텍스트 양을 제한합니다. 예산�
 #: src/components/ProblemsPanel.tsx
 msgid "line {displayLine}"
 msgstr "줄 {displayLine}"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Lines changed: {additions} added, {deletions} removed"
+msgstr "변경된 줄: {additions}줄 추가, {deletions}줄 삭제"
 
 #: src/components/settings/SkillTargetsPicker.tsx
 #: src/editor/bubble-menu/LinkEditPopover.tsx
@@ -8582,6 +8677,11 @@ msgstr "중간 크기 섹션 제목입니다."
 msgid "Mention a page"
 msgstr "페이지 언급"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Merged"
+msgstr "병합됨"
+
 #: src/components/MermaidDocEditor.tsx
 #: src/editor/components/Mermaid.tsx
 msgid "Mermaid diagram"
@@ -8982,6 +9082,10 @@ msgstr "탐색 및 제안"
 msgid "Navigation history"
 msgstr "탐색 기록"
 
+#: src/components/SessionsHost.tsx
+msgid "Needs you to sign in"
+msgstr "로그인이 필요합니다"
+
 #: src/components/settings/OkignoreSection.tsx
 msgid "Nested .okignore error in {path}"
 msgstr "{path}의 중첩된 .okignore 오류"
@@ -9020,6 +9124,10 @@ msgstr "새 항목"
 #: src/components/TerminalNewChatButton.tsx
 msgid "New {0} chat"
 msgstr "새 {0} 채팅"
+
+#: src/components/SessionsHost.tsx
+msgid "New activity"
+msgstr "새 활동"
 
 #: src/components/OkBlobRunner.tsx
 msgid "New best · press <0>Space</0> to play again"
@@ -9676,6 +9784,11 @@ msgstr "아직 이 프로젝트에 설치되지 않았습니다."
 msgid "Not now"
 msgstr "나중에"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Not planned"
+msgstr "계획 없음"
+
 #: src/components/ReportBugDialogBody.tsx
 msgid "Not redacted. Check the image before sharing."
 msgstr "민감 정보가 가려지지 않았습니다. 공유하기 전에 이미지를 확인하세요."
@@ -9683,6 +9796,10 @@ msgstr "민감 정보가 가려지지 않았습니다. 공유하기 전에 이�
 #: src/components/settings/SearchSection.tsx
 msgid "Not required for a loopback endpoint like <0>{endpointHost}</0> — most local servers ignore it. Add one only if yours needs it."
 msgstr "<0>{endpointHost}</0> 같은 루프백 엔드포인트에는 필요하지 않습니다. 대부분의 로컬 서버는 키를 무시합니다. 필요할 때만 추가합니다."
+
+#: src/components/SessionsHost.tsx
+msgid "Not running"
+msgstr "실행 중 아님"
 
 #: src/components/BugReportHistory.tsx
 msgid "Not sent"
@@ -9791,8 +9908,8 @@ msgid "Older"
 msgstr "이전"
 
 #: src/components/settings/LinkPreviewsSection.tsx
-msgid "On — hovering an external link sends its URL to the destination site to fetch a preview."
-msgstr "켜짐, 외부 링크 위에 마우스를 올리면 미리보기를 가져오기 위해 URL을 대상 사이트로 전송합니다."
+msgid "On — hovering an external link sends its URL to the destination site to fetch a preview, and hovering a GitHub reference in an agent chat asks GitHub for it."
+msgstr "켜짐, 외부 링크 위에 마우스를 올리면 미리보기를 가져오기 위해 URL을 대상 사이트로 전송하고, 에이전트 채팅의 GitHub 참조 위에 마우스를 올리면 GitHub에 요청합니다."
 
 #: src/components/settings/SearchSection.tsx
 msgid "On — your search queries and the text of matching pages are sent to your embeddings provider (OpenAI by default) to compute embeddings."
@@ -9853,6 +9970,11 @@ msgstr "현재 문서만 <0>#{tag}</0>을 사용합니다."
 msgid "Open"
 msgstr "열기"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Open"
+msgstr "열림"
+
 #. placeholder {0}: status.remote.label
 #: src/components/settings/SyncSection.tsx
 #: src/components/SyncStatusBadge.tsx
@@ -9871,6 +9993,10 @@ msgstr "{displayName} Desktop 열기"
 #: src/components/acp/ThreadView.tsx
 msgid "Open {docName}"
 msgstr "{docName} 열기"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Open {handoffLabel}"
+msgstr "{handoffLabel} 열기"
 
 #: src/components/PropertyWidgets.tsx
 msgid "Open {keyName} in browser"
@@ -10184,14 +10310,12 @@ msgstr "교체 컨트롤을 확장한 상태로 비주얼 편집기 찾기를 �
 #: src/components/CommandPalette.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Open with AI"
 msgstr "AI로 열기"
 
 #: src/components/CommandPalette.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Open with AI {displayName} Desktop"
 msgstr "AI {displayName} Desktop으로 열기"
 
@@ -10216,6 +10340,10 @@ msgstr "워크트리 열기"
 #: src/lib/keyboard-shortcuts.ts
 msgid "Open, navigate, accept, or dismiss CodeMirror completion suggestions."
 msgstr "CodeMirror 자동 완성 제안을 열고 탐색하고 수락하거나 닫습니다."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Opened by {author}"
+msgstr "{author}님이 생성"
 
 #: src/lib/install-onboarding-toast.ts
 msgid "Opened existing OpenKnowledge project at {ancestorPath}"
@@ -11421,6 +11549,14 @@ msgstr "이 프로젝트의 OpenKnowledge 설정을 읽습니다"
 msgid "Reads unresolved conflicts between edits"
 msgstr "편집 간의 미해결 충돌을 읽습니다"
 
+#: src/components/SessionsHost.tsx
+msgid "Ready"
+msgstr "준비됨"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Ready to merge"
+msgstr "병합 가능"
+
 #: src/components/SeedDialog.tsx
 msgid "Ready-made folders and templates to get you started quickly."
 msgstr "빠르게 시작할 수 있는 미리 준비된 폴더와 템플릿입니다."
@@ -11937,6 +12073,10 @@ msgstr "버그 신고"
 msgid "Report a bug…"
 msgstr "버그 신고…"
 
+#: src/components/acp/ThreadView.tsx
+msgid "Report a problem with this chat…"
+msgstr "이 채팅의 문제 신고…"
+
 #. placeholder {0}: row.projectSlug
 #: src/components/BugReportHistory.tsx
 msgid "Report from {0}"
@@ -11990,6 +12130,10 @@ msgstr "필수"
 #: src/components/settings/frontmatter-schema-field-editor.tsx
 msgid "Required"
 msgstr "필수"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Required checks are failing"
+msgstr "필수 검사 실패"
 
 #: src/components/handoff/OpenInAgentMenuItem.tsx
 msgid "Requires {brand}."
@@ -13110,8 +13254,8 @@ msgid "Show {hiddenCount} more"
 msgstr "{hiddenCount}개 더 보기"
 
 #: src/components/settings/LinkPreviewsSection.tsx
-msgid "Show a preview card when you hover an external link in the editor."
-msgstr "편집기에서 외부 링크 위에 마우스를 올리면 미리보기 카드를 표시합니다."
+msgid "Show a preview card when you hover an external link in the editor or a GitHub pull request or issue in an agent chat."
+msgstr "편집기의 외부 링크나 에이전트 채팅의 GitHub 풀 리퀘스트 또는 이슈 위에 마우스를 올리면 미리보기 카드를 표시합니다."
 
 #: src/components/settings/OkignoreSection.tsx
 msgid "Show advanced"
@@ -13216,6 +13360,14 @@ msgstr "패널 보기"
 msgid "Show panel ({panelShortcutLabel})"
 msgstr "패널 보기 ({panelShortcutLabel})"
 
+#: src/components/settings/AgentConnectionsSection.tsx
+msgid "Show prompts again"
+msgstr "안내 다시 표시"
+
+#: src/components/settings/AgentConnectionsSection.tsx
+msgid "Show prompts again for {displayName} in this project"
+msgstr "안내 다시 표시: 이 프로젝트의 {displayName}"
+
 #: src/editor/find-replace/FindReplaceBar.tsx
 msgid "Show replace"
 msgstr "바꾸기 표시"
@@ -13315,6 +13467,10 @@ msgstr "로그인 실패: {0}"
 #: src/lib/transports/auth-transport.ts
 msgid "Sign-in stream ended without confirmation — please try again"
 msgstr "로그인 스트림이 확인 없이 종료되었습니다. 다시 시도하세요."
+
+#: src/components/SessionsHost.tsx
+msgid "Signing in"
+msgstr "로그인 중"
 
 #: src/components/acp/ThreadView.tsx
 msgid "Signing in to {agentName}"
@@ -13495,6 +13651,10 @@ msgstr "Slidev 시작 시간이 초과되었습니다. 다시 시도하세요."
 msgid "Small section heading."
 msgstr "작은 섹션 제목입니다."
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Some checks failed, but it can still merge"
+msgstr "일부 검사가 실패했지만 병합할 수 있음"
+
 #: src/components/TerminalPanel.tsx
 msgid "Some dropped files could not be inserted safely."
 msgstr "놓은 파일 중 일부를 안전하게 삽입할 수 없습니다."
@@ -13532,6 +13692,7 @@ msgid "Something named \"{name}\" is already in {scopeLabel}, and the server cou
 msgstr "“{name}”(이)라는 항목이 이미 {scopeLabel}에 있는데, 서버가 그것이 무엇인지 확인하지 못했습니다. 이전에 실패한 이동이 일부러 남겨 둔 것일 수 있습니다. 삭제하거나 교체하기 전에 원본과 비교하세요."
 
 #: src/components/AppErrorBoundary.tsx
+#: src/components/SessionsHost.tsx
 msgid "Something went wrong"
 msgstr "문제가 발생했습니다"
 
@@ -13677,6 +13838,11 @@ msgstr "＋ 버튼으로 채팅 시작하거나 페이지에서 에이전트 실
 msgid "Start a new chat"
 msgstr "새 채팅 시작"
 
+#. placeholder {0}: formatShortcutLabel('send-comment-queue')
+#: src/comments/CommentSendFooter.tsx
+msgid "Start a new chat ({0})"
+msgstr "새 채팅 시작 ({0})"
+
 #: src/components/NavigatorApp.tsx
 msgid "Start a new OpenKnowledge project."
 msgstr "새 OpenKnowledge 프로젝트를 시작합니다."
@@ -13716,6 +13882,10 @@ msgstr "스타터 팩"
 #: src/components/CreateProjectDialog.tsx
 msgid "Starter packs"
 msgstr "스타터 팩"
+
+#: src/components/SessionsHost.tsx
+msgid "Starting"
+msgstr "시작 중"
 
 #: src/components/acp/ThreadView.tsx
 msgid "Starting {agentName}…"
@@ -13803,6 +13973,10 @@ msgstr "수정을 중지합니다. 이미 수정한 파일은 그대로 유지�
 #: src/components/settings/LintingSection.tsx
 msgid "Stop maintaining index.md"
 msgstr "index.md 유지 관리 중지"
+
+#: src/components/SessionsHost.tsx
+msgid "Stopped"
+msgstr "중지됨"
 
 #: src/lib/project-fix-sweep-store.ts
 msgid "Stopped fixing. Files already fixed stay fixed."
@@ -14159,7 +14333,6 @@ msgstr "사용 가능한 템플릿"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/McpConsentDialogBody.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 #: src/components/settings/SettingsDialogShell.tsx
@@ -14330,6 +14503,38 @@ msgstr "에이전트 작업 중"
 msgid "The agent isn't stopping. Force stop closes this chat and quits the agent."
 msgstr "에이전트 중지 실패. 강제 중지 시 채팅 종료 및 에이전트 종료."
 
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process ended on its own."
+msgstr "에이전트 프로세스가 스스로 종료되었습니다."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process stopped for an unknown reason."
+msgstr "에이전트 프로세스가 알 수 없는 이유로 중지되었습니다."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process stopped with exit code {code}."
+msgstr "에이전트 프로세스가 종료 코드 {code}(으)로 중지되었습니다."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was killed (SIGKILL). That usually comes from the system, for example when memory runs out, or from another process ending it."
+msgstr "에이전트 프로세스가 강제 종료되었습니다(SIGKILL). 보통 메모리가 부족할 때처럼 시스템에서 발생하거나, 다른 프로세스가 종료시킨 경우입니다."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was stopped by a {signal} signal."
+msgstr "에이전트 프로세스가 {signal} 신호로 중지되었습니다."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was told to stop ({signal}) by something outside this chat."
+msgstr "이 채팅 밖의 무언가가 에이전트 프로세스에 중지를 요청했습니다({signal})."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent ran out of memory."
+msgstr "에이전트의 메모리가 부족해졌습니다."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent's installation is missing files (a module could not be found). Reinstalling the agent usually fixes this."
+msgstr "에이전트 설치에 파일이 누락되었습니다(모듈을 찾을 수 없음). 에이전트를 다시 설치하면 보통 해결됩니다."
+
 #: src/lib/acp/tool-failure-hint.ts
 msgid "The agent's OpenKnowledge tools couldn't reach the server. Ask the agent to try again, and if it keeps failing, start a new chat."
 msgstr "에이전트의 OpenKnowledge 도구가 서버에 연결하지 못했습니다. 에이전트에게 다시 시도해 달라고 요청하고, 계속 실패하면 새 채팅을 시작하세요."
@@ -14362,9 +14567,25 @@ msgstr "보드 뷰어를 불러오지 못했습니다. 연결을 확인하고 �
 msgid "The board's content is not a valid Excalidraw scene."
 msgstr "보드의 내용이 유효한 Excalidraw 장면이 아닙니다."
 
+#: src/components/acp/ThreadView.tsx
+msgid "The browser isn't available in this chat because it couldn't be set up. OpenKnowledge's log has the details."
+msgstr "이 채팅에서는 브라우저를 사용할 수 없습니다. 브라우저를 설정하지 못했기 때문입니다. 자세한 내용은 OpenKnowledge 로그에 있습니다."
+
+#: src/components/acp/ThreadView.tsx
+msgid "The browser isn't available in this chat because no Node.js install that can start it was found. Install Node.js, then start a new chat."
+msgstr "이 채팅에서는 브라우저를 사용할 수 없습니다. 브라우저를 시작할 수 있는 Node.js 설치를 찾지 못했기 때문입니다. Node.js를 설치한 뒤 새 채팅을 시작하세요."
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "The chat's messages, tool calls, and their output, so we can see what the agent did, plus the chat's title, the project folder's path, the document it started from, and the agent and its settings. Images are replaced by their type and size, and attached text files are included. It can contain document content, so uncheck it if you'd rather not share it."
+msgstr "채팅 메시지, 도구 호출과 그 출력으로, 에이전트가 무엇을 했는지 확인할 수 있습니다. 채팅 제목, 프로젝트 폴더 경로, 채팅을 시작한 문서, 에이전트와 그 설정도 포함됩니다. 이미지는 형식과 크기로 대체되고, 첨부한 텍스트 파일은 포함됩니다. 문서 내용이 포함될 수 있으므로 공유하지 않으려면 선택을 해제하세요."
+
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "The Claude Desktop App didn't open the file. Is it installed? ({msg})"
 msgstr "Claude Desktop App 파일 열기 실패. 설치 상태 확인: ({msg})"
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "The conversation couldn't be added to this report."
+msgstr "대화를 이 보고서에 추가하지 못했습니다."
 
 #: src/lib/skills-api.ts
 msgid "The copy of \"{name}\" kept in {scopeLabel} is a redundant duplicate: the original was verified unchanged. Remove that copy, then retry the move."
@@ -14472,8 +14693,8 @@ msgid "The OpenKnowledge server took too long to answer. Ask the agent to try ag
 msgstr "OpenKnowledge 서버의 응답이 너무 오래 걸렸습니다. 에이전트에게 다시 시도해 달라고 요청하세요."
 
 #: src/comments/ThreadCard.tsx
-msgid "The original text was deleted. You can re-place this comment on selected text."
-msgstr "원문 삭제됨. 선택한 텍스트에 댓글 다시 배치 가능"
+msgid "The original text was deleted."
+msgstr "원문이 삭제되었습니다."
 
 #: src/components/SkillFileCreateDialog.tsx
 msgid "The path can't leave the skill (no . or ..)"
@@ -14867,6 +15088,10 @@ msgstr "이 컴포넌트가 삭제되었습니다."
 #: src/editor/ComposerMentionInput.tsx
 msgid "This composer doesn't accept attachments."
 msgstr "여기에는 파일을 첨부할 수 없습니다."
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "This conversation"
+msgstr "이 대화"
 
 #: src/components/acp/ThreadView.tsx
 msgid "This conversation keeps the window it started with. A new chat can use a different one."
@@ -15308,6 +15533,10 @@ msgstr "할 일"
 #: src/uninstall/UninstallNoticeScreen.tsx
 msgid "To do."
 msgstr "할 일"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "To save this setup, turn on Project MCP server or Global MCP server."
+msgstr "이 설정을 저장하려면 프로젝트 MCP 서버 또는 전역 MCP 서버를 켜세요."
 
 #: src/components/acp/ThreadHistoryPanel.tsx
 msgid "Today"
@@ -16141,7 +16370,12 @@ msgstr "비주얼 편집기 표 선택 영역"
 msgid "Waiting for authorization"
 msgstr "인증 대기 중"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Waiting for review"
+msgstr "리뷰 대기 중"
+
 #: src/components/acp/ThreadView.tsx
+#: src/components/SessionsHost.tsx
 msgid "Waiting for your approval"
 msgstr "승인 대기 중"
 
@@ -16219,10 +16453,6 @@ msgstr "복사본과 심볼릭 링크의 차이는 무엇인가요?"
 #: src/components/PublishToGitHubDialog.tsx
 msgid "What is this knowledge base for?"
 msgstr "이 지식 베이스는 무엇에 쓰나요?"
-
-#: src/components/handoff/OpenInAgentMenu.tsx
-msgid "What should the AI do? (optional)"
-msgstr "AI 작업 내용? (선택 사항)"
 
 #: src/components/acp/ThreadView.tsx
 msgid "What should we work on?"
@@ -16371,6 +16601,7 @@ msgstr "이 댓글 기반 작업"
 
 #: src/components/McpConsentDialogBody.tsx
 #: src/components/NewWorktreeDialog.tsx
+#: src/components/SessionsHost.tsx
 #: src/components/SkillEditorActions.tsx
 msgid "Working"
 msgstr "작업 중"

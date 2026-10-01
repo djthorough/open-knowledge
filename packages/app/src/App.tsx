@@ -10,6 +10,7 @@ import { EditorPane } from '@/components/EditorPane';
 import { FeedbackMenuTrigger } from '@/components/FeedbackMenuTrigger';
 import { FileSidebar } from '@/components/FileSidebar';
 import { defaultInitialDir } from '@/components/file-tree-utils';
+import { ExternalHandoffGateProvider } from '@/components/handoff/ExternalHandoffGate';
 import {
   type TerminalLaunchContextValue,
   TerminalLaunchProvider,
@@ -50,6 +51,7 @@ import { createPageRequest, nextUntitledDocName, openCreatedPage } from '@/lib/c
 import {
   assetPathFromHash,
   docNameFromHash,
+  hashFromDocName,
   isContentRootHash,
   isManagedHashHistoryState,
   markCurrentHashHistoryEntry,
@@ -250,6 +252,10 @@ function NavigationHandler() {
       if (assetPath) {
         const assetExt = assetPath.split('.').pop() ?? '';
         const mediaKind = mediaKindForSidebarAssetExtension(assetExt);
+        if (mediaKind === 'excalidraw') {
+          window.location.replace(hashFromDocName(assetPath));
+          return;
+        }
         mark('ok/nav/hash-change', { docName: null, kind: 'asset' });
         openHashTarget({
           kind: 'asset',
@@ -519,7 +525,7 @@ function ConfigProviderHost({ children }: { children: ReactNode }) {
     <ConfigProvider collabUrl={collabUrl} collabTerminal={collabTerminal}>
       <EditorLifecycleFlush />
       <BackgroundThrottleReporter />
-      {children}
+      <ExternalHandoffGateProvider>{children}</ExternalHandoffGateProvider>
     </ConfigProvider>
   );
 }
@@ -559,6 +565,7 @@ function AppBody() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const singleFile = useSingleFileMode();
   const noteWindow = isNoteWindow();
+  const showFileSidebar = !singleFile && !noteWindow;
 
   const installedClis = useInstalledClis();
   const terminalLaunch: TerminalLaunchContextValue | null =
@@ -626,10 +633,14 @@ function AppBody() {
           <CommentQueueShortcut />
           <SidebarProvider className="h-screen overflow-hidden">
             {}
-            {!singleFile && !noteWindow && (
-              <FileSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />
-            )}
-            <SidebarInset className="overflow-hidden h-[calc(100vh-var(--layout-inset-offset))]">
+            {showFileSidebar && <FileSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />}
+            <SidebarInset
+              className={
+                showFileSidebar
+                  ? 'h-[calc(100vh-var(--layout-inset-offset))] overflow-hidden'
+                  : 'h-screen overflow-hidden'
+              }
+            >
               <EditorPane onOpenSearch={() => setCommandPaletteOpen(true)} />
             </SidebarInset>
           </SidebarProvider>

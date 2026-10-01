@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { _electron as electron } from '@playwright/test';
+import { SPAWN_STARTUP_DEADLINE_MS } from '../../../src/shared/boot-narration.ts';
+import { readinessGiveUpBoundMs } from './launch-readiness';
 
 type ElectronLaunchOptions = NonNullable<Parameters<typeof electron.launch>[0]>;
 export type SmokeLaunchEnv = NonNullable<ElectronLaunchOptions['env']>;
@@ -27,7 +29,7 @@ export interface DesktopTarget {
   mode: DesktopLaunchMode;
   appPath?: string;
   targetPath: string;
-  exists: boolean;
+  readonly exists: boolean;
   missingReason: string;
 }
 
@@ -38,6 +40,15 @@ export interface ResolveDesktopTargetOptions {
 
 export function executableForAppBundle(appPath: string): string {
   return join(appPath, 'Contents', 'MacOS', basename(appPath, '.app'));
+}
+
+function probedOnRead(target: Omit<DesktopTarget, 'exists'>): DesktopTarget {
+  return {
+    ...target,
+    get exists() {
+      return existsSync(target.targetPath);
+    },
+  };
 }
 
 export function resolveDesktopTarget(options: ResolveDesktopTargetOptions = {}): DesktopTarget {
@@ -52,21 +63,19 @@ export function resolveDesktopTarget(options: ResolveDesktopTargetOptions = {}):
 
   if (appPath !== undefined) {
     const targetPath = executableForAppBundle(appPath);
-    return {
+    return probedOnRead({
       mode: 'packaged',
       appPath,
       targetPath,
-      exists: existsSync(targetPath),
       missingReason: `Packaged desktop build missing at ${targetPath} — build a packaged app, or point ${PACKAGED_APP_ENV} at one.`,
-    };
+    });
   }
 
-  return {
+  return probedOnRead({
     mode: 'unpackaged',
     targetPath: UNPACKAGED_MAIN_ENTRY,
-    exists: existsSync(UNPACKAGED_MAIN_ENTRY),
     missingReason: `Main build missing at ${UNPACKAGED_MAIN_ENTRY} — run "pnpm run build:desktop" first.`,
-  };
+  });
 }
 
 export interface DesktopLaunchOptionsInput {
@@ -85,6 +94,15 @@ export interface DesktopLaunchOptions {
 
 export const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
 
+export const PACKAGED_SMOKE_SERVER_IDLE_SHUTDOWN_MS = 2 * SPAWN_STARTUP_DEADLINE_MS;
+
+export const SETUP_BEFORE_FIRST_READINESS_WAIT_MS = 0;
+
+export const ONE_LAUNCH_AND_ITS_READINESS_VERDICT_MS =
+  DEFAULT_LAUNCH_TIMEOUT_MS +
+  readinessGiveUpBoundMs({ path: 'fork' }) +
+  SETUP_BEFORE_FIRST_READINESS_WAIT_MS;
+
 export function desktopLaunchOptions(input: DesktopLaunchOptionsInput = {}): DesktopLaunchOptions {
   const target = input.target ?? resolveDesktopTarget();
   const extraArgs = input.args ?? [];
@@ -95,5 +113,16 @@ export function desktopLaunchOptions(input: DesktopLaunchOptionsInput = {}): Des
       ? { args: [...extraArgs], timeout, executablePath: target.targetPath }
       : { args: [target.targetPath, ...extraArgs], timeout };
 
-  return { ...base, env: { ...process.env, ...input.env, OK_LANG: 'en', OK_LOG_LEVEL: 'info' } };
+  return {
+    ...base,
+    env: {
+      ...process.env,
+      ...input.env,
+      OK_LANG: 'en',
+      OK_LOG_LEVEL: 'info',
+      ...(target.mode === 'packaged'
+        ? { OK_IDLE_SHUTDOWN: `${PACKAGED_SMOKE_SERVER_IDLE_SHUTDOWN_MS / 1000}s` }
+        : {}),
+    },
+  };
 }

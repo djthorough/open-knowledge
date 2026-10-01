@@ -1,12 +1,24 @@
-import { describe, expect, test } from 'vitest';
+import { i18n } from '@lingui/core';
+import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import {
   ALLOWED_IMAGE_MIMES,
+  type AttachmentRefusal,
   collectImageFiles,
+  describeAttachmentRefusals,
   describeImageError,
   fileToAttachment,
   fileToImageAttachment,
+  fitImageToBytes,
+  type ImageShrinker,
+  logAttachmentRejection,
+  MAX_EMBEDDED_FILE_BYTES,
   MAX_IMAGE_BYTES,
+  shrinkImageToFit,
 } from './image-attachment.ts';
+import { stubImageCanvas } from './image-canvas.test-helper.ts';
+
+i18n.load('en', {});
+i18n.activate('en');
 
 function makeFile(bytes: Uint8Array, name: string, type: string): File {
   return new File([bytes], name, { type });
@@ -47,18 +59,138 @@ describe('fileToImageAttachment', () => {
     }
   });
 
-  test('refuses a file above the per-image cap without reading its bytes', async () => {
+  test('refuses an image over the per-image cap when nothing here can shrink it', async () => {
     const bytes = new Uint8Array(MAX_IMAGE_BYTES + 1);
     const file = makeFile(bytes, 'huge.png', 'image/png');
     const result = await fileToImageAttachment(file);
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'too-large', sizeBytes: bytes.length, limitBytes: MAX_IMAGE_BYTES },
+    });
+  });
+
+  test('an image over the cap is sent as a copy shrunk to fit', async () => {
+    const file = makeFile(new Uint8Array(MAX_IMAGE_BYTES * 3), 'photo.png', 'image/png');
+    const shrink = vi.fn<ImageShrinker>(async () => ({
+      blob: new Blob([new Uint8Array([7, 8, 9])], { type: 'image/webp' }),
+      width: 2048,
+      height: 1536,
+    }));
+
+    const result = await fileToImageAttachment(file, { shrink });
+
+    expect(shrink).toHaveBeenCalledWith(file, [MAX_IMAGE_BYTES]);
+    expect(result).toEqual({
+      ok: true,
+      part: {
+        kind: 'image',
+        data: 'BwgJ',
+        mimeType: 'image/webp',
+        name: 'photo.png',
+        sizeBytes: 3,
+      },
+    });
+  });
+
+  test('an image over the cap that cannot shrink to fit is refused', async () => {
+    const file = makeFile(new Uint8Array(MAX_IMAGE_BYTES * 3), 'photo.png', 'image/png');
+
+    const result = await fileToImageAttachment(file, { shrink: async () => null });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe('too-large');
-      if (result.error.kind === 'too-large') {
-        expect(result.error.sizeBytes).toBe(bytes.length);
-        expect(result.error.limitBytes).toBe(MAX_IMAGE_BYTES);
-      }
-    }
+    if (!result.ok) expect(result.error.kind).toBe('too-large');
+  });
+
+  test('an image over the cap that the browser cannot decode is refused as too large', async () => {
+    stubImageCanvas();
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => {
+        throw new DOMException('The source image could not be decoded.', 'InvalidStateError');
+      }),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    onTestFinished(() => {
+      warn.mockRestore();
+      vi.unstubAllGlobals();
+    });
+    const bytes = new Uint8Array(MAX_IMAGE_BYTES * 2);
+
+    const result = await fileToImageAttachment(makeFile(bytes, 'broken.png', 'image/png'));
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'too-large', sizeBytes: bytes.length, limitBytes: MAX_IMAGE_BYTES },
+    });
+  });
+
+  test('a GIF over the cap is refused without shrinking, which would drop its animation', async () => {
+    const file = makeFile(new Uint8Array(MAX_IMAGE_BYTES + 1), 'loop.gif', 'image/gif');
+    const shrink = vi.fn<ImageShrinker>(async () => null);
+
+    const result = await fileToImageAttachment(file, { shrink });
+
+    expect(shrink).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+  });
+
+  test('an image within what is left of the message is sent as it is', async () => {
+    const file = makeFile(new Uint8Array([1, 2, 3, 4]), 'shot.png', 'image/png');
+    const shrink = vi.fn<ImageShrinker>(async () => null);
+
+    const result = await fileToImageAttachment(file, { budgetBytes: 10, shrink });
+
+    expect(shrink).not.toHaveBeenCalled();
+    expect(result.ok && result.part.kind === 'image' && result.part.mimeType).toBe('image/png');
+  });
+
+  test('an image that fits the cap but not what is left is shrunk to what is left', async () => {
+    const file = makeFile(new Uint8Array(1000), 'second.png', 'image/png');
+    const shrink = vi.fn<ImageShrinker>(async () => ({
+      blob: new Blob([new Uint8Array(400)], { type: 'image/webp' }),
+      width: 600,
+      height: 400,
+    }));
+
+    const result = await fileToImageAttachment(file, { budgetBytes: 500, shrink });
+
+    expect(shrink).toHaveBeenCalledWith(file, [500]);
+    expect(result.ok && result.part.kind === 'image' && result.part.sizeBytes).toBe(400);
+  });
+
+  test('an image that fits the cap but cannot shrink into what is left is sent as it is, for the caller to budget', async () => {
+    const file = makeFile(new Uint8Array(1000), 'second.png', 'image/png');
+    const shrink = vi.fn<ImageShrinker>(async () => null);
+
+    const result = await fileToImageAttachment(file, { budgetBytes: 500, shrink });
+
+    expect(shrink).toHaveBeenCalledTimes(1);
+    expect(result.ok && result.part.kind === 'image' && result.part.sizeBytes).toBe(1000);
+  });
+
+  test('an image over the cap that cannot shrink into what is left is shrunk to the cap, for the caller to budget', async () => {
+    const file = makeFile(new Uint8Array(MAX_IMAGE_BYTES * 2), 'photo.png', 'image/png');
+    const shrink = vi.fn<ImageShrinker>(async () => ({
+      blob: new Blob([new Uint8Array(900)], { type: 'image/webp' }),
+      width: 900,
+      height: 600,
+    }));
+
+    const result = await fileToImageAttachment(file, { budgetBytes: 100, shrink });
+
+    expect(shrink).toHaveBeenCalledWith(file, [100, MAX_IMAGE_BYTES]);
+    expect(result.ok && result.part.kind === 'image' && result.part.sizeBytes).toBe(900);
+  });
+
+  test('an image over the cap is decoded once, however many sizes it is fitted to', async () => {
+    stubImageCanvas({ width: 4000, height: 3000 });
+    onTestFinished(() => vi.unstubAllGlobals());
+    const file = makeFile(new Uint8Array(MAX_IMAGE_BYTES * 2), 'photo.png', 'image/png');
+
+    const result = await fileToImageAttachment(file, { budgetBytes: 100 });
+
+    expect(createImageBitmap).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: true, part: { kind: 'image', mimeType: 'image/webp' } });
   });
 
   test('ALLOWED_IMAGE_MIMES intentionally excludes svg + bmp + tiff (agent-verified formats only)', () => {
@@ -69,6 +201,102 @@ describe('fileToImageAttachment', () => {
     expect(ALLOWED_IMAGE_MIMES.has('image/svg+xml')).toBe(false);
     expect(ALLOWED_IMAGE_MIMES.has('image/bmp')).toBe(false);
     expect(ALLOWED_IMAGE_MIMES.has('image/tiff')).toBe(false);
+  });
+});
+
+describe('fitImageToBytes', () => {
+  const byArea = (bytesPerPixel: number) =>
+    vi.fn(
+      async (width: number, height: number) =>
+        new Blob([new Uint8Array(Math.round(width * height * bytesPerPixel))]),
+    );
+
+  test('caps the long edge first, then shrinks until the encoding fits', async () => {
+    const encode = byArea(0.2);
+
+    const fitted = await fitImageToBytes({ width: 4000, height: 3000 }, 300_000, encode);
+
+    expect(encode.mock.calls[0]).toEqual([2048, 1536]);
+    expect(fitted).not.toBeNull();
+    expect(fitted?.blob.size).toBeLessThanOrEqual(300_000);
+    expect(fitted?.width).toBeLessThan(2048);
+    expect((fitted?.width ?? 0) / (fitted?.height ?? 1)).toBeCloseTo(4 / 3, 1);
+  });
+
+  test('re-encodes a smaller image at its own size first', async () => {
+    const encode = byArea(0.1);
+
+    const fitted = await fitImageToBytes({ width: 1000, height: 800 }, 1_000_000, encode);
+
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(fitted).toMatchObject({ width: 1000, height: 800 });
+  });
+
+  test('gives up rather than shrink below a readable size', async () => {
+    const encode = byArea(1);
+
+    expect(await fitImageToBytes({ width: 4000, height: 3000 }, 10, encode)).toBeNull();
+    for (const [width, height] of encode.mock.calls) {
+      expect(Math.max(width, height)).toBeGreaterThanOrEqual(512);
+    }
+  });
+});
+
+describe('shrinkImageToFit', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('encodes WebP where the browser can, and releases the decoded image', async () => {
+    const { close } = stubImageCanvas({ width: 3000, height: 2000, bytesPerPixel: 0.05 });
+    const file = makeFile(new Uint8Array(10), 'shot.png', 'image/png');
+
+    const shrunk = await shrinkImageToFit(file, [150_000]);
+
+    expect(shrunk?.blob.type).toBe('image/webp');
+    expect(shrunk?.blob.size).toBeLessThanOrEqual(150_000);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  test('falls back to JPEG on white where the browser cannot encode WebP', async () => {
+    const canvas = stubImageCanvas({
+      encodes: (type) => (type === 'image/webp' ? 'image/png' : type),
+    });
+    const file = makeFile(new Uint8Array(10), 'shot.png', 'image/png');
+
+    const shrunk = await shrinkImageToFit(file, [150_000]);
+
+    expect(shrunk?.blob.type).toBe('image/jpeg');
+    expect(shrunk && canvas.encodedCanvas(shrunk.blob)).toEqual({
+      imageVisible: true,
+      transparentAreaColor: '#ffffff',
+    });
+  });
+
+  test('declines where there is no canvas to draw on', async () => {
+    vi.stubGlobal('OffscreenCanvas', undefined);
+    const file = makeFile(new Uint8Array(10), 'shot.png', 'image/png');
+
+    expect(await shrinkImageToFit(file, [150_000])).toBeNull();
+  });
+});
+
+describe('logAttachmentRejection', () => {
+  test('records why, how big and what type, but not the file name', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const file = makeFile(new Uint8Array(5), 'private-name.png', 'image/png');
+
+    logAttachmentRejection('composer', file, { kind: 'total-too-large', limitBytes: 700 });
+
+    expect(warn).toHaveBeenCalledWith('[acp-attachment] refused', {
+      surface: 'composer',
+      reason: 'total-too-large',
+      sizeBytes: 5,
+      mimeType: 'image/png',
+      limitBytes: 700,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private-name');
+    warn.mockRestore();
   });
 });
 
@@ -205,6 +433,14 @@ describe('collectImageFiles', () => {
 describe('fileToAttachment — workspace containment (security-critical)', () => {
   const TXT = 'text/plain';
   const makeTxt = (name: string) => makeFile(new Uint8Array([65, 66, 67]), name, TXT);
+  const embeddedText = (name: string) => ({
+    kind: 'blob',
+    data: 'ABC',
+    textPayload: true,
+    mimeType: TXT,
+    name,
+    sizeBytes: 3,
+  });
 
   test('POSIX: file directly inside the workspace root → file part with the workspace-relative path', async () => {
     const file = makeTxt('notes.md');
@@ -232,28 +468,24 @@ describe('fileToAttachment — workspace containment (security-critical)', () =>
     }
   });
 
-  test('POSIX: sibling-prefix path is REFUSED — /work/project-evil vs /work/project', async () => {
+  test('POSIX: a sibling-prefix path is never referenced by path — /work/project-evil vs /work/project', async () => {
     const file = makeTxt('secrets.md');
     const outcome = await fileToAttachment(file, {
       absPathOf: () => '/work/project-evil/secrets.md',
       workspaceContentDir: '/work/project',
       pathSeparator: '/',
     });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) {
-      expect(outcome.error.kind).toBe('outside-workspace');
-    }
+    expect(outcome.ok && outcome.part).toEqual(embeddedText('secrets.md'));
   });
 
-  test('POSIX: file completely outside the workspace → refused', async () => {
+  test('POSIX: a file outside the workspace travels with the message instead of by path', async () => {
     const file = makeTxt('personal.md');
     const outcome = await fileToAttachment(file, {
       absPathOf: () => '/home/user/Documents/personal.md',
       workspaceContentDir: '/work/project',
       pathSeparator: '/',
     });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error.kind).toBe('outside-workspace');
+    expect(outcome.ok && outcome.part).toEqual(embeddedText('personal.md'));
   });
 
   test('POSIX: trailing-slash root is tolerated', async () => {
@@ -304,33 +536,97 @@ describe('fileToAttachment — workspace containment (security-critical)', () =>
     }
   });
 
-  test('Windows: sibling-prefix attack refused (case-insensitive)', async () => {
+  test('Windows: a sibling-prefix path is never referenced by path (case-insensitive)', async () => {
     const outcome = await fileToAttachment(makeTxt('bad.md'), {
       absPathOf: () => 'C:\\Work\\Project-Evil\\bad.md',
       workspaceContentDir: 'C:\\Work\\Project',
       pathSeparator: '\\',
     });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error.kind).toBe('outside-workspace');
+    expect(outcome.ok && outcome.part).toEqual(embeddedText('bad.md'));
   });
 
-  test('no absPathOf resolver → unknown-path (web host without Electron)', async () => {
+  test('with no path resolver (web host) the file travels with the message', async () => {
     const outcome = await fileToAttachment(makeTxt('a.md'), {
       workspaceContentDir: '/work/project',
       pathSeparator: '/',
     });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error.kind).toBe('unknown-path');
+    expect(outcome.ok && outcome.part).toEqual(embeddedText('a.md'));
   });
 
-  test('resolver returns null (Electron webUtils gave up) → unknown-path', async () => {
+  test('when the resolver gives up the file travels with the message', async () => {
     const outcome = await fileToAttachment(makeTxt('a.md'), {
       absPathOf: () => null,
       workspaceContentDir: '/work/project',
       pathSeparator: '/',
     });
+    expect(outcome.ok && outcome.part).toEqual(embeddedText('a.md'));
+  });
+
+  test('a binary file with no path is refused by name and told to use @ once it is in the project', async () => {
+    const outcome = await fileToAttachment(
+      makeFile(new Uint8Array([0, 1, 2, 255]), 'receipt.pdf', 'application/pdf'),
+      {},
+    );
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error.kind).toBe('unknown-path');
+    if (!outcome.ok) {
+      expect(outcome.error).toEqual({ kind: 'not-text', name: 'receipt.pdf', location: 'unknown' });
+      expect(describeImageError(outcome.error)).toBe(
+        "receipt.pdf isn't a text file, so it can't be sent with the message. Mention it with @ once it's in your project.",
+      );
+    }
+  });
+
+  test('a binary file outside the project is told to add it to the project first', async () => {
+    const outcome = await fileToAttachment(
+      makeFile(new Uint8Array([0, 1, 2, 255]), 'receipt.pdf', 'application/pdf'),
+      {
+        absPathOf: () => '/home/user/Downloads/receipt.pdf',
+        workspaceContentDir: '/work/project',
+        pathSeparator: '/',
+      },
+    );
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toEqual({
+        kind: 'not-text',
+        name: 'receipt.pdf',
+        location: 'outside-project',
+      });
+      expect(describeImageError(outcome.error)).toBe(
+        "receipt.pdf isn't a text file, so it can't be sent with the message. Add it to your project, then mention it with @.",
+      );
+    }
+  });
+
+  test('text is recognised by its bytes, so a source file the OS mislabels still travels as text', async () => {
+    const source = new TextEncoder().encode('export const x = 1;\n');
+    const outcome = await fileToAttachment(makeFile(source, 'x.ts', 'video/mp2t'), {});
+    expect(outcome.ok && outcome.part).toMatchObject({
+      kind: 'blob',
+      data: 'export const x = 1;\n',
+      textPayload: true,
+      mimeType: 'text/plain',
+    });
+    const invalidUtf8 = await fileToAttachment(
+      makeFile(new Uint8Array([0xc3, 0x28]), 'y.txt', TXT),
+      {},
+    );
+    expect(invalidUtf8.ok).toBe(false);
+  });
+
+  test('a file over the per-attachment cap is refused with its name', async () => {
+    const big = makeFile(new Uint8Array(MAX_EMBEDDED_FILE_BYTES + 1), 'huge.log', TXT);
+    const outcome = await fileToAttachment(big, {});
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toEqual({
+        kind: 'file-too-large',
+        name: 'huge.log',
+        location: 'unknown',
+        limitBytes: MAX_EMBEDDED_FILE_BYTES,
+      });
+      expect(describeImageError(outcome.error)).toContain('huge.log');
+    }
   });
 
   test('image files still short-circuit through the image path, ignoring workspace deps', async () => {
@@ -338,5 +634,73 @@ describe('fileToAttachment — workspace containment (security-critical)', () =>
     const outcome = await fileToAttachment(png, {});
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.part.kind).toBe('image');
+  });
+});
+
+describe('describeAttachmentRefusals', () => {
+  const capKb = Math.round(MAX_EMBEDDED_FILE_BYTES / 1024);
+  const notText = (name: string, location: 'outside-project' | 'unknown'): AttachmentRefusal => ({
+    kind: 'not-text',
+    name,
+    location,
+  });
+
+  test('refusals of one kind become one notice that names every file', () => {
+    expect(
+      describeAttachmentRefusals([notText('a.pdf', 'unknown'), notText('b.zip', 'unknown')]),
+    ).toEqual([
+      "a.pdf and b.zip aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.",
+    ]);
+  });
+
+  test('each kind and location gets its own notice, in the order first seen', () => {
+    expect(
+      describeAttachmentRefusals([
+        {
+          kind: 'file-too-large',
+          name: 'big.log',
+          location: 'outside-project',
+          limitBytes: MAX_EMBEDDED_FILE_BYTES,
+        },
+        notText('a.pdf', 'outside-project'),
+        notText('b.pdf', 'unknown'),
+        notText('c.pdf', 'outside-project'),
+      ]),
+    ).toEqual([
+      `big.log is larger than ${capKb} KB, so it can't be sent with the message. Add it to your project, then mention it with @.`,
+      "a.pdf and c.pdf aren't text files, so they can't be sent with the message. Add them to your project, then mention them with @.",
+      "b.pdf isn't a text file, so it can't be sent with the message. Mention it with @ once it's in your project.",
+    ]);
+  });
+
+  test('three refusals are all named', () => {
+    const [message] = describeAttachmentRefusals(
+      ['a.pdf', 'b.pdf', 'c.pdf'].map((name) => notText(name, 'unknown')),
+    );
+    expect(message).toBe(
+      "a.pdf, b.pdf, and c.pdf aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.",
+    );
+  });
+
+  test('the file list is joined the way the active language joins lists', () => {
+    i18n.load('es', {});
+    i18n.activate('es');
+    try {
+      const [message] = describeAttachmentRefusals(
+        ['a.pdf', 'b.pdf', 'c.pdf'].map((name) => notText(name, 'unknown')),
+      );
+      expect(message?.startsWith('a.pdf, b.pdf y c.pdf ')).toBe(true);
+    } finally {
+      i18n.activate('en');
+    }
+  });
+
+  test('a long list names the first files and counts the rest', () => {
+    const [message] = describeAttachmentRefusals(
+      ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf'].map((name) => notText(name, 'unknown')),
+    );
+    expect(message).toBe(
+      "a.pdf, b.pdf, and 3 others aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.",
+    );
   });
 });

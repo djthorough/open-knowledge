@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vitest';
+import { pid1Reaps } from '../../../../test-support/capabilities.test-helper.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_ENTRY = join(HERE, '..', '..', 'dist', 'cli.mjs');
@@ -19,13 +20,6 @@ function isAlive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-function killQuietly(pid: number | undefined): void {
-  if (pid === undefined) return;
-  try {
-    process.kill(pid, 'SIGKILL');
-  } catch {}
 }
 
 function diagnoseStuckChild(childPid: number, errPath: string): string {
@@ -70,7 +64,8 @@ describe('ok mcp orphan reaping (PRD-6917)', () => {
     }
   });
 
-  test('ok mcp exits when its launching parent dies even if stdin never EOFs (no orphan to launchd)', async () => {
+  test('ok mcp exits when its launching parent dies even if stdin never EOFs (no orphan to launchd)', async (ctx) => {
+    ctx.skip(!pid1Reaps, 'PID 1 must reap the orphans this test waits on');
     const dir = mkdtempSync(join(tmpdir(), 'ok-orphan-reaping-'));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -94,7 +89,7 @@ describe('ok mcp orphan reaping (PRD-6917)', () => {
       stdio: 'ignore',
     });
     keeper.unref();
-    cleanups.push(() => killQuietly(keeper.pid));
+    cleanups.push(() => keeper.kill('SIGKILL'));
 
     const parentScript = join(dir, 'parent.mjs');
     writeFileSync(
@@ -122,7 +117,7 @@ describe('ok mcp orphan reaping (PRD-6917)', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: process.env,
     });
-    cleanups.push(() => killQuietly(parent.pid));
+    cleanups.push(() => parent.kill('SIGKILL'));
 
     let stdoutBuf = '';
     parent.stdout.on('data', (chunk) => {
@@ -132,7 +127,6 @@ describe('ok mcp orphan reaping (PRD-6917)', () => {
     const match = stdoutBuf.match(/CHILDPID:(\d+)/);
     expect(gotPid && match).toBeTruthy();
     const childPid = Number(match?.[1]);
-    cleanups.push(() => killQuietly(childPid));
 
     const cameUp = await pollUntil(() => isAlive(childPid), STARTUP_BUDGET_MS, 100);
     expect(
@@ -144,7 +138,7 @@ describe('ok mcp orphan reaping (PRD-6917)', () => {
     const diedWhileParented = await pollUntil(() => !isAlive(childPid), 3_000, 250);
     expect(diedWhileParented).toBe(false);
 
-    killQuietly(parent.pid);
+    parent.kill('SIGKILL');
 
     const exited = await pollUntil(() => !isAlive(childPid), EXIT_BUDGET_MS, 250);
     expect(

@@ -84,12 +84,12 @@ name: Select beta to promote
 # (3) the script stops at the first already-shipped beta (commit contained in the
 # latest stable) and never selects one whose changes are already released.
 #
-# FAST TIER (FR5a), BUILT BUT UNARMED: a second job smokes an under-soaked
-# beta's DMG and, only on a clean smoke, dispatches promote-stable early. It is
-# gated on `fast_tier_candidate`, which the selection script writes empty today,
-# so it never runs and adds zero per-tick cost. A fail or an error verdict only
-# ever declines the early promotion — the 24h path is untouched and the gate can
-# never block a release. Arming steps are documented in RELEASES.md.
+# FAST TIER (FR5a), ARMED: a second job smokes an under-soaked beta's DMG and,
+# only on a clean smoke, dispatches promote-stable early. It is gated on
+# `fast_tier_candidate`, which is empty on ticks where nothing qualifies, and on
+# ticks whose candidate's DMG already failed the smoke. A fail or an error
+# verdict only ever declines the early promotion — the 24h path is untouched and
+# the gate can never block a release. The operator record is RELEASES.md.
 
 on:
   schedule:
@@ -168,7 +168,7 @@ jobs:
       # the macOS smoke leg keys off it. Empty on ticks where nothing qualifies,
       # which skips the smoke leg at zero cost — and empty on every tick when
       # FAST_TIER_ARMED is "false".
-      fast_tier_candidate: ${{ steps.select.outputs.fast_tier_candidate }}
+      fast_tier_candidate: ${{ steps.nominate.outputs.fast_tier_candidate }}
       tier: ${{ steps.select.outputs.tier }}
     steps:
       - name: Business-hours gate (America/New_York)
@@ -240,6 +240,34 @@ jobs:
         # exception: it degrades to the slower tier rather than failing the tick.
         # Logic + tests: .github/scripts/select-beta-to-promote.{mjs,test.mjs}.
         run: node .github/scripts/select-beta-to-promote.mjs
+
+      - name: Look up an earlier smoke failure for the fast-tier candidate
+        id: prior-failure
+        if: steps.select.outputs.fast_tier_candidate != '' && github.event_name != 'workflow_dispatch'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: fast-tier-smoke-failed
+          key: fast-tier-smoke-failed-v1-${{ steps.select.outputs.fast_tier_candidate }}
+          lookup-only: true
+
+      - name: Skip the fast-tier candidate whose DMG already failed the smoke
+        if: steps.prior-failure.outputs.cache-hit == 'true'
+        env:
+          CANDIDATE: ${{ steps.select.outputs.fast_tier_candidate }}
+        run: echo "::notice::${CANDIDATE}'s DMG already failed the fast-tier smoke, so it is not smoked again; it promotes on the 24h tier. A workflow_dispatch run re-smokes it."
+
+      - name: Nominate the fast-tier candidate for smoking
+        id: nominate
+        env:
+          CANDIDATE: ${{ steps.select.outputs.fast_tier_candidate }}
+          ALREADY_FAILED: ${{ steps.prior-failure.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [[ "$ALREADY_FAILED" == "true" ]]; then
+            echo "fast_tier_candidate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "fast_tier_candidate=${CANDIDATE}" >> "$GITHUB_OUTPUT"
+          fi
 
       # Hours-gated, standard tier only. `target` is always the 24h selection —
       # a fast-tier cut never reaches this step; it is nominated as
@@ -323,6 +351,8 @@ jobs:
     # Apple Silicon: the DMG is a Universal build, but launching it needs macOS.
     runs-on: macos-26
     timeout-minutes: 30
+    outputs:
+      verdict: ${{ steps.smoke.outputs.verdict }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -341,21 +371,19 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Download the candidate's DMG
+        id: download
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANDIDATE: ${{ needs.evaluate.outputs.fast_tier_candidate }}
-        run: |
-          set -euo pipefail
-          mkdir -p "${RUNNER_TEMP}/fast-tier-dmg"
-          gh release download "$CANDIDATE" --pattern 'OpenKnowledge-Beta-*.dmg' --dir "${RUNNER_TEMP}/fast-tier-dmg"
+        run: node .github/scripts/download-candidate-dmg.mjs
 
       - name: Smoke the DMG
         id: smoke
         env:
           CANDIDATE: ${{ needs.evaluate.outputs.fast_tier_candidate }}
+          DMG: ${{ steps.download.outputs.dmg_path }}
         run: |
           set -uo pipefail
-          DMG="$(find "${RUNNER_TEMP}/fast-tier-dmg" -maxdepth 1 -name '*.dmg' | head -1)"
           if [[ -z "$DMG" ]]; then
             echo "verdict=error" >> "$GITHUB_OUTPUT"
             echo "::warning::No .dmg downloaded for ${CANDIDATE}; refusing the fast tier (the 24h path is unaffected)."
@@ -367,6 +395,7 @@ jobs:
           node .github/scripts/smoke-packaged-dmg.mjs "$DMG" || true
 
       - name: Dispatch promote-stable for the smoke-proven candidate
+        id: dispatch
         if: steps.smoke.outputs.verdict == 'pass'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -383,36 +412,43 @@ jobs:
           fi
           SELF_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           gh workflow run promote-stable.yml -f beta_tag="$CANDIDATE" -f dispatched_by="$SELF_URL"
+          echo "dispatched=true" >> "$GITHUB_OUTPUT"
           echo "::notice::Fast tier: dispatched promote-stable for ${CANDIDATE} after its DMG smoked clean."
 
+      - name: Record a successful fast-tier dispatch
+        if: steps.dispatch.outputs.dispatched == 'true'
+        run: echo "The smoke-proven candidate was dispatched."
+
       - name: Record a fast-tier refusal
-        if: steps.smoke.outputs.verdict != 'pass'
+        if: failure() || steps.smoke.outputs.verdict != 'pass'
         env:
           CANDIDATE: ${{ needs.evaluate.outputs.fast_tier_candidate }}
           VERDICT: ${{ steps.smoke.outputs.verdict }}
-          SLACK_RELEASES_WEBHOOK_URL: ${{ secrets.SLACK_RELEASES_WEBHOOK_URL }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -uo pipefail
           echo "::notice::Fast tier refused for ${CANDIDATE} (verdict=${VERDICT:-unknown}). The 24h tier is unaffected; this beta promotes normally once it has soaked."
-          # Per-refusal page. A fast-tier tick can fire at 03:00 on a Sunday;
-          # without this the only trace of the gate biting is a job notice
-          # nobody is watching, which makes the gate decorative. Best-effort:
-          # a failed POST is a warning, never a job failure — the refusal
-          # itself already protected the release.
-          WEBHOOK_URL="${SLACK_RELEASES_WEBHOOK_URL:-${SLACK_WEBHOOK_URL:-}}"
-          if [[ -z "$WEBHOOK_URL" ]]; then
-            echo "::notice::No Slack webhook secret set — refusal page skipped."
-            exit 0
-          fi
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          TEXT="⛔ Fast-tier DMG smoke REFUSED for ${CANDIDATE} (verdict=${VERDICT:-unknown}). The beta stays on the 24h soak; investigate the smoke before it promotes. ${RUN_URL}"
-          payload="$(jq -nc --arg t "$TEXT" '{text: $t}')"
-          if curl -sS --fail -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK_URL"; then
-            echo "Posted the fast-tier refusal page."
-          else
-            echo "::warning::Fast-tier refusal page failed to POST — the refusal itself still holds."
-          fi
+          echo "Fast tier refused for ${CANDIDATE}; verdict=${VERDICT:-unknown}. The aggregate incident reporter owns Slack notifications." >> "$GITHUB_STEP_SUMMARY"
+
+  remember-smoke-failure:
+    name: Remember the candidate's failed smoke
+    needs: [evaluate, smoke-fast-tier-candidate]
+    if: always() && needs.smoke-fast-tier-candidate.outputs.verdict == 'fail'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write the failure marker
+        env:
+          CANDIDATE: ${{ needs.evaluate.outputs.fast_tier_candidate }}
+        run: |
+          set -euo pipefail
+          mkdir -p fast-tier-smoke-failed
+          echo "$CANDIDATE" > fast-tier-smoke-failed/candidate
+
+      - name: Save the failure marker
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: fast-tier-smoke-failed
+          key: fast-tier-smoke-failed-v1-${{ needs.evaluate.outputs.fast_tier_candidate }}
 
   # Aggregate silent-failure alarm.
   #
@@ -421,15 +457,6 @@ jobs:
   # always-refusing, or a fast tier that has gone inert. Both look exactly like
   # a calm week.
   #
-  # Silent by default and by design. With the fast tier unarmed the smoke job
-  # never runs, the derived history is empty, and the evaluator reports no
-  # alarm — an intentionally disarmed tier is not a broken one, and an alarm
-  # that fired continuously while the tier was off would train responders to
-  # ignore it.
-  #
-  # Schedule-only: the alarm is about a trend, so evaluating it on every push
-  # would add noise without adding signal. Stateless — it derives history from
-  # this workflow's own run records and writes nothing back.
   aggregate-smoke-alarm:
     name: Aggregate DMG-smoke alarm
     if: github.event_name == 'schedule'
@@ -457,34 +484,37 @@ jobs:
           FAST_TIER_ARMED: ${{ env.FAST_TIER_ARMED }}
         run: node .github/scripts/evaluate-smoke-alarm.mjs
 
-      # Routed to the same channel as the per-cut smoke alert, not to a
-      # workflow annotation alone — an annotation on a scheduled job nobody
-      # opens is indistinguishable from silence. Slack only, for the reason the
-      # per-cut alert is: Discord carries shipped releases, not gate health.
+      - name: Restore the smoke incident acknowledgement
+        if: steps.alarm.outputs.observed == 'true'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/smoke-incident.json
+          key: smoke-incident-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: smoke-incident-v1-
+
       - name: Page the release channel
-        if: steps.alarm.outputs.alarm == 'true'
+        id: page
+        if: steps.alarm.outputs.observed == 'true'
+        continue-on-error: true
         env:
           SLACK_RELEASES_WEBHOOK_URL: ${{ secrets.SLACK_RELEASES_WEBHOOK_URL }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           REASONS: ${{ steps.alarm.outputs.reasons }}
+          ALERT_INCIDENT: ${{ steps.alarm.outputs.incident }}
+          ALERT_STATE_PATH: ${{ runner.temp }}/smoke-incident.json
         run: |
-          set -uo pipefail
+          set -euo pipefail
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          TEXT="🚨 DMG SMOKE GATE ALARM — ${REASONS}. Investigate before trusting the fast tier. ${RUN_URL}"
-          # `text` only: `content` was Discord's field, and Slack is now the
-          # sole recipient.
-          payload="$(jq -nc --arg t "$TEXT" '{text: $t}')"
-          post() {
-            local webhook="$1" label="$2"
-            if [[ -z "$webhook" ]]; then
-              echo "::notice::${label} webhook not set — skipping the ${label} aggregate alarm."
-              return 0
-            fi
-            if curl -sS --fail -X POST -H 'Content-type: application/json' --data "$payload" "$webhook"; then
-              echo "Posted the ${label} aggregate alarm."
-            else
-              echo "::warning::${label} aggregate alarm failed to POST — the alarm condition still holds."
-            fi
-          }
-          post "${SLACK_RELEASES_WEBHOOK_URL:-${SLACK_WEBHOOK_URL:-}}" Slack
-          echo "::warning::DMG smoke gate alarm: ${REASONS}"
+          if [[ -n "$ALERT_INCIDENT" ]]; then
+            export ALERT_TEXT="🚨 Fast-tier gate incident — ${REASONS}. Repeated attempts stay silent; a persistent incident reminds daily. ${RUN_URL}"
+          else
+            export ALERT_TEXT="✅ Fast-tier gate recovered: a successful dispatch is visible in the sampled history. ${RUN_URL}"
+          fi
+          node .github/scripts/release-alert-state.mjs
+
+      - name: Remember the smoke incident acknowledgement
+        if: steps.page.outcome == 'success' && steps.page.outputs.notified == 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/smoke-incident.json
+          key: smoke-incident-v1-${{ github.run_id }}-${{ github.run_attempt }}

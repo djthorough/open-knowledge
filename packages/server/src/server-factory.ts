@@ -168,6 +168,7 @@ import type {
   ProbeTokenStore,
   PushPermission,
 } from './github-permissions.ts';
+import { createGitHubTokenResolver } from './github-reference/token-resolver.ts';
 import { type HeadWatcherHandle, readProjectHeadState, startHeadWatcher } from './head-watcher.ts';
 import { errnoCode } from './http/handler-utils.ts';
 import type { NativeApiHandle } from './http/http-app.ts';
@@ -989,6 +990,7 @@ export function createServer(options: ServerOptions): ServerInstance {
   let sessionManager: AgentSessionManager;
   let nativeApi: NativeApiHandle;
   let localApi: LocalApiDispatch;
+  let shutdownLocalOps: () => Promise<void>;
   let bridgeLossReporter: BridgeDeriveLossReporter | undefined;
   let inPlaceRescanTimer: ReturnType<typeof setTimeout> | null = null;
   let shadowWarmupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2185,6 +2187,7 @@ export function createServer(options: ServerOptions): ServerInstance {
       getLinkAdvisoryPolicy: readLinkAdvisoryPolicy,
       getProjectConfigEpoch: () => projectConfigEpoch,
       getLinkPreviewsEnabled: readLinkPreviewsEnabled,
+      resolveGitHubToken: createGitHubTokenResolver(options.detectGh, options.tokenStore),
       getConfigDiagnostics: readConfigDiagnostics,
       embeddingsSecretsFile: secretsFilePath(configHomedirOverride),
       readSemanticProviderConfig: readSemanticSearchConfig,
@@ -2196,6 +2199,7 @@ export function createServer(options: ServerOptions): ServerInstance {
     hocuspocus.configuration.extensions.push(apiExtension);
     nativeApi = apiExtension.nativeApi;
     localApi = apiExtension.localApi;
+    shutdownLocalOps = apiExtension.shutdownLocalOps;
 
     const bridgeGuardConfig = readConfigSafely({
       absPath: resolveConfigPath('project', projectDir),
@@ -3153,6 +3157,8 @@ export function createServer(options: ServerOptions): ServerInstance {
       const t0 = Date.now();
       const phaseErrors: Array<{ phase: string; error: string }> = [];
       shutdownAllowsUnload = true;
+      const authShutdown = Promise.allSettled([shutdownLocalOps()]);
+      let authResult: PromiseSettledResult<void> | undefined;
 
       try {
         await closeIndexRegeneration();
@@ -3399,6 +3405,18 @@ export function createServer(options: ServerOptions): ServerInstance {
             }
           }
 
+          [authResult] = await authShutdown;
+          if (authResult.status === 'rejected') {
+            const reason: unknown = authResult.reason;
+            const failures = reason instanceof AggregateError ? reason.errors : [reason];
+            phaseErrors.push({
+              phase: 'local-op-subprocess-shutdown',
+              error: failures
+                .map((failure) => (failure instanceof Error ? failure.message : String(failure)))
+                .join('; '),
+            });
+            log.error({ err: reason }, '[server] shutdown local-op subprocess drain failed');
+          }
           const durationMs = Date.now() - t0;
           if (phaseErrors.length === 0) {
             log.info(
@@ -3431,6 +3449,7 @@ export function createServer(options: ServerOptions): ServerInstance {
           });
         }
       }
+      if (authResult?.status === 'rejected') throw authResult.reason;
     })();
 
     return inflightDestroy;

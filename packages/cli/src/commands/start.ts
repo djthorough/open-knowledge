@@ -309,6 +309,7 @@ interface BootStartServerOptions {
   reactShellDistDir?: string;
   singleFile?: string;
   projectDir?: string;
+  terminalAuthAvailable?: boolean;
 }
 
 export interface BootedStartServer {
@@ -509,6 +510,7 @@ export async function bootStartServer(opts: BootStartServerOptions): Promise<Boo
         ? { serveContentAssets: opts.serveContentAssets }
         : {}),
       ...(opts.reactShellDistDir ? { reactShellDistDir: opts.reactShellDistDir } : {}),
+      ...(opts.terminalAuthAvailable === true ? { terminalAuthAvailable: true } : {}),
     });
   } catch (err) {
     await reapOwnedEphemeralDir();
@@ -551,6 +553,7 @@ interface StartCommandOptions {
   singleFile?: string;
   projectDir?: string;
   externalUrl?: string;
+  terminalAuth?: boolean;
 }
 
 export function resolveStartConfig(
@@ -705,6 +708,7 @@ export async function runStartCommand(configArg: Config, opts: StartCommandOptio
       serverRuntime: runtime,
       ...(opts.singleFile ? { singleFile: opts.singleFile } : {}),
       ...(opts.projectDir ? { projectDir: opts.projectDir } : {}),
+      ...(opts.terminalAuth === true ? { terminalAuthAvailable: true } : {}),
     });
   } catch (err) {
     if (err instanceof OkDirMissingError) {
@@ -992,6 +996,12 @@ export function startCommand(getConfig: () => Config): Command {
       new Option(
         '--project-dir <dir>',
         'Throwaway project root for --single-file (where ephemeral .ok/ state lives)',
+      ).hideHelp(),
+    )
+    .addOption(
+      new Option(
+        '--terminal-auth',
+        "Tell in-app agents that this server's client can run terminal sign-ins (the desktop app passes it when it has a terminal)",
       ).hideHelp(),
     )
     .option(

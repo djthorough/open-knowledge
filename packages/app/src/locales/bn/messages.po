@@ -15,8 +15,8 @@ msgstr ""
 
 #: src/components/acp/AttachFilesButton.tsx
 #: src/components/ComposerAddMenu.tsx
-msgid " · references only (no embedded contents)"
-msgstr " · শুধু রেফারেন্স (কোনো এম্বেড করা বিষয়বস্তু নেই)"
+msgid " · project files as references"
+msgstr " · প্রজেক্টের ফাইল রেফারেন্স হিসেবে"
 
 #: src/components/settings/HotkeysSection.tsx
 msgid " or "
@@ -33,6 +33,14 @@ msgstr " আপনার নির্বাচন পুনরুদ্ধার
 #: src/components/settings/LintingSection.tsx
 msgid "— except"
 msgstr "— ছাড়া"
+
+#: src/components/SessionsHost.tsx
+msgid ", {status}"
+msgstr ", {status}"
+
+#: src/components/SessionsHost.tsx
+msgid ", {status}, new activity"
+msgstr ", {status}, নতুন কার্যকলাপ"
 
 #: src/components/acp/ThreadView.tsx
 msgid "… earlier output trimmed"
@@ -391,6 +399,11 @@ msgstr "{1}টির মধ্যে {0}টি প্রকল্প নির�
 msgid "{0} of {1} selected"
 msgstr "{1}টির মধ্যে {0}টি নির্বাচিত"
 
+#. placeholder {0}: threadIds.length
+#: src/comments/CommentSendFooter.tsx
+msgid "{0} of {totalCount}"
+msgstr "{totalCount}টির মধ্যে {0}টি"
+
 #. placeholder {0}: resolvedTarget.displayName
 #: src/components/BottomComposer.tsx
 #: src/components/empty-state/CreatePromptComposer.tsx
@@ -614,6 +627,10 @@ msgstr "{agentName}-এর জন্য আপনার সাইন ইন প�
 msgid "{agentName} reported: {headline}"
 msgstr "{agentName} জানিয়েছে: {headline}"
 
+#: src/components/acp/ThreadView.tsx
+msgid "{agentName} stopped unexpectedly."
+msgstr "{agentName} অপ্রত্যাশিতভাবে থেমে গেছে।"
+
 #: src/components/acp/thread-auth-offer.ts
 msgid "{agentName} stopped with an error."
 msgstr "{agentName} একটি ত্রুটি নিয়ে থেমে গেছে।"
@@ -675,6 +692,22 @@ msgstr "{conflictCount, plural, one {# দ্বন্দ্ব} other {# দ্
 #: src/components/SyncStatusBadge.tsx
 msgid "{conflictCount, plural, one {# file conflicted} other {# files conflicted}}"
 msgstr "{conflictCount, plural, one {# ফাইলে দ্বন্দ্ব} other {# ফাইলে দ্বন্দ্ব}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} is larger than {capKb} KB, so it can't be sent with the message. Add it to your project, then mention it with @.} other {{files} are each larger than {capKb} KB, so they can't be sent with the message. Add them to your project, then mention them with @.}}"
+msgstr "{count, plural, one {{files} {capKb} KB-এর চেয়ে বড়, তাই এটি বার্তার সঙ্গে পাঠানো যায় না। এটি আপনার প্রজেক্টে যোগ করুন, তারপর @ দিয়ে এটির উল্লেখ করুন।} other {{files} প্রতিটি {capKb} KB-এর চেয়ে বড়, তাই এগুলো বার্তার সঙ্গে পাঠানো যায় না। এগুলো আপনার প্রজেক্টে যোগ করুন, তারপর @ দিয়ে এগুলোর উল্লেখ করুন।}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} is larger than {capKb} KB, so it can't be sent with the message. Mention it with @ once it's in your project.} other {{files} are each larger than {capKb} KB, so they can't be sent with the message. Mention them with @ once they're in your project.}}"
+msgstr "{count, plural, one {{files} {capKb} KB-এর চেয়ে বড়, তাই এটি বার্তার সঙ্গে পাঠানো যায় না। প্রজেক্টে থাকলে @ দিয়ে এটির উল্লেখ করুন।} other {{files} প্রতিটি {capKb} KB-এর চেয়ে বড়, তাই এগুলো বার্তার সঙ্গে পাঠানো যায় না। প্রজেক্টে থাকলে @ দিয়ে এগুলোর উল্লেখ করুন।}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} isn't a text file, so it can't be sent with the message. Add it to your project, then mention it with @.} other {{files} aren't text files, so they can't be sent with the message. Add them to your project, then mention them with @.}}"
+msgstr "{count, plural, one {{files} টেক্সট ফাইল নয়, তাই এটি বার্তার সঙ্গে পাঠানো যায় না। এটি আপনার প্রজেক্টে যোগ করুন, তারপর @ দিয়ে এটির উল্লেখ করুন।} other {{files} টেক্সট ফাইল নয়, তাই এগুলো বার্তার সঙ্গে পাঠানো যায় না। এগুলো আপনার প্রজেক্টে যোগ করুন, তারপর @ দিয়ে এগুলোর উল্লেখ করুন।}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} isn't a text file, so it can't be sent with the message. Mention it with @ once it's in your project.} other {{files} aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.}}"
+msgstr "{count, plural, one {{files} টেক্সট ফাইল নয়, তাই এটি বার্তার সঙ্গে পাঠানো যায় না। প্রজেক্টে থাকলে @ দিয়ে এটির উল্লেখ করুন।} other {{files} টেক্সট ফাইল নয়, তাই এগুলো বার্তার সঙ্গে পাঠানো যায় না। প্রজেক্টে থাকলে @ দিয়ে এগুলোর উল্লেখ করুন।}}"
 
 #: src/comments/comment-chips.tsx
 msgid "{count, plural, one {# comment} other {# comments}}"
@@ -745,7 +778,7 @@ msgstr "{count}টি স্কিল"
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr "{days, plural, one {# দিন আগে} other {# দিন আগে}}"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{days}d ago"
 msgstr "{days} দিন আগে"
 
@@ -809,7 +842,6 @@ msgstr "{displayName} ({bin}) ইনস্টল করা নেই বা আ�
 #: src/components/empty-state/CreatePromptComposer.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 msgid "{displayName} CLI"
 msgstr "{displayName} CLI"
@@ -880,10 +912,10 @@ msgstr "{folderCount, plural, one {ফোল্ডার} other {ফোল্ড
 msgid "{formatted} GitHub stars"
 msgstr "{formatted}টি GitHub স্টার"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/ActivityModeContent.tsx
 #: src/components/ActivityPanelFileRow.tsx
 #: src/components/SyncStatusBadge.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{hours}h ago"
 msgstr "{hours} ঘণ্টা আগে"
 
@@ -965,25 +997,17 @@ msgstr "{server} MCP সার্ভারের {mcpTool}"
 msgid "{mins, plural, one {# min ago} other {# min ago}}"
 msgstr "{mins, plural, one {# মিনিট আগে} other {# মিনিট আগে}}"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/ActivityModeContent.tsx
 #: src/components/ActivityPanelBurstRow.tsx
 #: src/components/ActivityPanelFileRow.tsx
 #: src/components/SyncStatusBadge.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{minutes}m ago"
 msgstr "{minutes} মিনিট আগে"
 
 #: src/components/TerminalNewChatButton.tsx
 msgid "{name} CLI"
 msgstr "{name} CLI"
-
-#: src/lib/acp/image-attachment.ts
-msgid "{name} has no resolvable path — the agent can only read files inside the workspace."
-msgstr "{name}-এর কোনো সমাধানযোগ্য পাথ নেই — এজেন্ট শুধু ওয়ার্কস্পেসের ভেতরের ফাইল পড়তে পারে।"
-
-#: src/lib/acp/image-attachment.ts
-msgid "{name} is outside the workspace. Move it into your project first."
-msgstr "{name} ওয়ার্কস্পেসের বাইরে আছে। আগে এটি আপনার প্রকল্পে সরান।"
 
 #: src/components/SkillsSidebarSection.tsx
 msgid "{name} moved, but its pin did not. Pin it again after settings finish loading."
@@ -1001,10 +1025,9 @@ msgstr "{omitted, plural, one {আরও # প্রপার্টি পরি
 msgid "{openedWorktreeCount, plural, one {worktree} other {worktrees}}"
 msgstr "{openedWorktreeCount, plural, one {ওয়ার্কট্রি} other {ওয়ার্কট্রি}}"
 
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{outsideWorkspaceCount, plural, one {Skipped # file outside the workspace.} other {Skipped # files outside the workspace.}}"
-msgstr "{outsideWorkspaceCount, plural, one {ওয়ার্কস্পেসের বাইরের # ফাইল বাদ দেওয়া হয়েছে।} other {ওয়ার্কস্পেসের বাইরের # ফাইল বাদ দেওয়া হয়েছে।}}"
+#: src/lib/acp/image-attachment.ts
+msgid "{others, plural, one {# other} other {# others}}"
+msgstr "{others, plural, one {আরও #টি} other {আরও #টি}}"
 
 #: src/components/PublishToGitHubDialog.tsx
 msgid "{owner}/{name} already exists"
@@ -1112,11 +1135,6 @@ msgstr "{sizeText} · গোপন তথ্য সরানো হয়েছ�
 msgid "{skillCount, plural, one {skill} other {skills}}"
 msgstr "{skillCount, plural, one {স্কিল} other {স্কিল}}"
 
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{skipTotal, plural, one {Skipped # file that couldn't be attached.} other {Skipped # files that couldn't be attached.}}"
-msgstr "{skipTotal, plural, one {# ফাইল বাদ দেওয়া হয়েছে যা সংযুক্ত করা যায়নি।} other {# ফাইল বাদ দেওয়া হয়েছে যা সংযুক্ত করা যায়নি।}}"
-
 #. placeholder {0}: BASE16_SLOT_ROLES[slot]
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "{slot} color — {0}"
@@ -1170,11 +1188,6 @@ msgstr "{total, plural, one {# সমস্যা} other {# সমস্যা}}
 #: src/components/FileTree.tsx
 msgid "{truncatedShownCount, plural, one {Showing the first item in one folder — the rest of that folder is hidden.} other {Showing the first {formattedCount} items in one folder — the rest of that folder is hidden.}}"
 msgstr "{truncatedShownCount, plural, one {একটি ফোল্ডারের প্রথম আইটেম দেখানো হচ্ছে — সেই ফোল্ডারের বাকিটা লুকানো।} other {একটি ফোল্ডারের প্রথম {formattedCount}টি আইটেম দেখানো হচ্ছে — সেই ফোল্ডারের বাকিটা লুকানো।}}"
-
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{unknownPathCount, plural, one {Skipped # file — this browser can't attach files by path.} other {Skipped # files — this browser can't attach files by path.}}"
-msgstr "{unknownPathCount, plural, one {# ফাইল বাদ দেওয়া হয়েছে — এই ব্রাউজার পাথ দ্বারা ফাইল সংযুক্ত করতে পারে না।} other {# ফাইল বাদ দেওয়া হয়েছে — এই ব্রাউজার পাথ দ্বারা ফাইল সংযুক্ত করতে পারে না।}}"
 
 #: src/components/FileTree.tsx
 msgid "{uploadedCount, plural, one {Uploaded one file} other {Uploaded {uploadedCount} files}}"
@@ -1238,6 +1251,10 @@ msgid "# One pattern per line.\n"
 "#   *.draft.md\n"
 "#   !keep.md"
 msgstr "# প্রতি লাইনে একটি প্যাটার্ন।\\n# উদাহরণ:\\n#   drafts/\\n#   *.draft.md\\n#   !keep.md"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "#{position} in the merge queue"
+msgstr "মার্জ কিউতে #{position}"
 
 #: src/components/GraphLegend.tsx
 msgid "+ {overflow} more"
@@ -1347,6 +1364,14 @@ msgstr "{shareBranch} নামে একটি ব্রাঞ্চ আগে 
 msgid "A branch with that name already exists. Open its worktree from the switcher instead."
 msgstr "ওই নামে একটি ব্রাঞ্চ আগে থেকেই আছে। বদলে সুইচার থেকে এর ওয়ার্কট্রি খুলুন।"
 
+#: src/lib/acp/exit-summary.ts
+msgid "A command the agent needs could not be run (exit code {code}). Check that it is executable and that you have permission to run it."
+msgstr "এজেন্টের প্রয়োজনীয় একটি কমান্ড চালানো যায়নি (এক্সিট কোড {code})। এটি এক্সিকিউটেবল কি না এবং এটি চালানোর অনুমতি আপনার আছে কি না দেখুন।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "A command the agent needs was not found (exit code {code}). Check that the agent's dependencies are installed and on your PATH."
+msgstr "এজেন্টের প্রয়োজনীয় একটি কমান্ড পাওয়া যায়নি (এক্সিট কোড {code})। এজেন্টের ডিপেন্ডেন্সিগুলো ইনস্টল করা আছে এবং আপনার PATH-এ আছে কি না দেখুন।"
+
 #: src/components/SkillInstallMenu.tsx
 msgid "A copy is a real folder of its own, and OK keeps it in step with the source: edit the skill here and every copy is refreshed. That stops the moment you hand-edit a copy outside OK — from then on it goes its own way and shows up as a separate skill."
 msgstr "অনুলিপি নিজেই একটি সত্যিকারের ফোল্ডার, আর OK সেটিকে উৎসের সঙ্গে মিলিয়ে রাখে: স্কিলটি এখানে সম্পাদনা করুন, প্রতিটি অনুলিপি সতেজ হয়ে যায়। আপনি OK-এর বাইরে কোনো অনুলিপি হাতে সম্পাদনা করলেই সেটি বন্ধ হয়ে যায় — তারপর থেকে সেটি নিজের পথে চলে এবং আলাদা স্কিল হিসেবে দেখা দেয়।"
@@ -1413,6 +1438,10 @@ msgstr "{0}-এর বাঁ পাশে একটি নতুন প্যা
 #: src/components/EditorWorkspace.tsx
 msgid "a new pane to the right of {0}"
 msgstr "{0}-এর ডান পাশে একটি নতুন প্যান"
+
+#: src/components/handoff/useHandoffDispatch.ts
+msgid "A newer handoff replaced this retry."
+msgstr "একটি নতুন হ্যান্ডঅফ এই পুনরায় চেষ্টার জায়গা নিয়েছে।"
 
 #: src/components/settings/SettingsDialogErrorBoundary.tsx
 #: src/components/TerminalGate.tsx
@@ -2094,6 +2123,10 @@ msgstr "যার ক্ষেত্রে প্রযোজ্য"
 msgid "Applies to (globs — leading ! excludes; empty means every doc)"
 msgstr "যার ক্ষেত্রে প্রযোজ্য (গ্লোব — শুরুতে ! থাকলে বাদ দেয়; খালি মানে প্রতিটি নথি)"
 
+#: src/components/settings/settings-fields.ts
+msgid "Applies to all projects on this machine, in Claude Code and Codex chats in the Agents panel started after you turn it on. The agent can open pages, click, type, and take screenshots in its own Google Chrome window with a fresh profile. Needs Google Chrome and Node.js installed. Every browser action asks for your approval, with no option to always allow it, unless the agent's own mode or permission settings skip approvals."
+msgstr "এই মেশিনের সব প্রজেক্টে প্রযোজ্য, চালু করার পরে শুরু হওয়া এজেন্ট প্যানেলের Claude Code ও Codex চ্যাটে। এজেন্ট নতুন প্রোফাইলসহ নিজের Google Chrome উইন্ডোতে পেজ খুলতে, ক্লিক করতে, টাইপ করতে ও স্ক্রিনশট নিতে পারে। Google Chrome ও Node.js ইনস্টল থাকা দরকার। ব্রাউজারের প্রতিটি কাজ আপনার অনুমোদন চায়, সবসময় অনুমতি দেওয়ার কোনো বিকল্প ছাড়াই, যদি না এজেন্টের নিজের মোড বা অনুমতি সেটিংস অনুমোদন এড়িয়ে যায়।"
+
 #: src/components/settings/TerminalSection.tsx
 msgid "Applies to all projects on this machine. Claude and Codex started from the built-in terminal, and any agent in an in-app Agents panel chat, auto-approve OpenKnowledge's read and write tools (Claude also auto-runs \"ok open\"). Deleting, moving, sharing, importing or installing skills, other commands, and non-OpenKnowledge file edits still ask. In the terminal, Cursor, OpenCode, and Pi are unaffected. Best-effort per agent."
 msgstr "এই মেশিনের সব প্রজেক্টে প্রযোজ্য। বিল্ট-ইন টার্মিনাল থেকে শুরু করা Claude ও Codex, এবং অ্যাপের এজেন্ট প্যানেল চ্যাটের যেকোনো এজেন্ট, OpenKnowledge-এর পড়া ও লেখার টুল স্বয়ংক্রিয়ভাবে অনুমোদন করে (Claude \"ok open\"-ও স্বয়ংক্রিয়ভাবে চালায়)। স্কিল মোছা, সরানো, শেয়ার করা, ইমপোর্ট বা ইনস্টল করা, অন্যান্য কমান্ড এবং OpenKnowledge-বহির্ভূত ফাইল সম্পাদনা এখনও জিজ্ঞাসা করে। টার্মিনালে Cursor, OpenCode ও Pi প্রভাবিত হয় না। প্রতিটি এজেন্টের জন্য যথাসাধ্য।"
@@ -2146,6 +2179,10 @@ msgstr "অনুমোদিত"
 msgid "Approved — {optionName}"
 msgstr "অনুমোদিত — {optionName}"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Approved and ready to merge"
+msgstr "অনুমোদিত এবং মার্জের জন্য প্রস্তুত"
+
 #: src/components/FileTree.tsx
 msgid "Are you sure you want to convert this file into a template? The original file will be deleted. This action cannot be undone."
 msgstr "আপনি কি নিশ্চিত যে এই ফাইলটিকে টেমপ্লেটে রূপান্তর করতে চান? মূল ফাইলটি মুছে ফেলা হবে। এই কাজ ফেরানো যাবে না।"
@@ -2191,7 +2228,6 @@ msgstr "{0} CLI-কে জিজ্ঞেস করুন"
 #: src/components/handoff/agent-launcher-labels.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Ask {agentName}"
 msgstr "{agentName}-কে জিজ্ঞেস করুন"
 
@@ -2341,6 +2377,10 @@ msgstr "স্বয়ংক্রিয় সংশোধন ({count})"
 msgid "Auto-fix applies only to problems with a known mechanical fix."
 msgstr "স্বয়ংক্রিয় সংশোধন কেবল সেই সমস্যাগুলোর ক্ষেত্রেই প্রযোজ্য যাদের পরিচিত যান্ত্রিক সমাধান আছে।"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Auto-merge is on"
+msgstr "অটো-মার্জ চালু আছে"
+
 #: src/components/FolderTimelineCard.tsx
 #: src/components/TimelinePanel.tsx
 msgid "Auto-save"
@@ -2456,6 +2496,10 @@ msgstr "সিঙ্ক করার আগে git কমিটের জন্�
 msgid "Before you go, mind sharing why?"
 msgstr "যাওয়ার আগে কারণটা জানাবেন কি?"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Behind the base branch"
+msgstr "বেস ব্রাঞ্চের চেয়ে পিছিয়ে"
+
 #: src/editor/slash-command/items.tsx
 msgid "Below"
 msgstr "নিচে"
@@ -2493,6 +2537,10 @@ msgstr "Blob Run"
 #: src/editor/slash-command/component-items.tsx
 msgid "Block math equation rendered with KaTeX from a LaTeX source string."
 msgstr "একটি LaTeX সোর্স স্ট্রিং থেকে KaTeX দিয়ে রেন্ডার করা ব্লক গাণিতিক সমীকরণ।"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Blocked from merging"
+msgstr "মার্জ করা আটকে আছে"
 
 #: src/components/TemplateForm.tsx
 msgid "Blog post"
@@ -2785,6 +2833,10 @@ msgstr "বাইরে বদলেছে"
 msgid "Changed outside OK since it last wrote here — the state shown is what's on disk now"
 msgstr "OK শেষবার এখানে লেখার পর বাইরে থেকে বদলানো হয়েছে — দেখানো অবস্থাটি এখন ডিস্কে যা আছে তাই"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Changes requested"
+msgstr "পরিবর্তন চাওয়া হয়েছে"
+
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "Changes save automatically to this theme."
 msgstr "পরিবর্তনগুলি এই থিমে স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়।"
@@ -2796,6 +2848,10 @@ msgstr "পরিবর্তনগুলি স্বয়ংক্রিয�
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "Changes saved automatically."
 msgstr "পরিবর্তনগুলি স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়েছে।"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Changes were saved, but OpenKnowledge could not confirm a connection to {handoffLabel}. Check the MCP server settings for this app, then select Save changes to check again."
+msgstr "পরিবর্তনগুলি সংরক্ষিত হয়েছে, কিন্তু OpenKnowledge {handoffLabel}-এর সঙ্গে সংযোগ নিশ্চিত করতে পারেনি। এই অ্যাপের MCP সার্ভারের সেটিংস পরীক্ষা করুন, তারপর আবার পরীক্ষা করতে পরিবর্তনগুলি সংরক্ষণ করুন নির্বাচন করুন।"
 
 #: src/components/settings/SearchSection.tsx
 msgid "Character budget per indexing request"
@@ -2853,6 +2909,10 @@ msgstr "পরীক্ষা করেছেন: {0}"
 #: src/components/SkillEditorActions.tsx
 msgid "Checking"
 msgstr "পরীক্ষা করা হচ্ছে"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Checking connection to {checkingLabel}…"
+msgstr "{checkingLabel}-এর সঙ্গে সংযোগ পরীক্ষা করা হচ্ছে…"
 
 #: src/components/BottomComposer.tsx
 msgid "Checking for agents"
@@ -2914,6 +2974,10 @@ msgstr "পরীক্ষা করা হচ্ছে…"
 #: src/editor/slash-command/items.tsx
 msgid "Checklist with checkboxes."
 msgstr "চেকবক্সসহ চেকলিস্ট।"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Checks are running"
+msgstr "চেক চলছে"
 
 #: src/lib/acp/tool-call-display.ts
 msgid "Checks documents for markdown problems and can fix them"
@@ -3235,6 +3299,11 @@ msgstr "উইন্ডো বন্ধ করুন"
 msgid "Close Window"
 msgstr "জানালা বন্ধ করুন"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Closed"
+msgstr "বন্ধ"
+
 #: src/components/GraphLegend.tsx
 msgid "Clusters"
 msgstr "গুচ্ছ"
@@ -3479,7 +3548,6 @@ msgstr "কনফিগারেশন সতর্কতা"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/SessionsHost.tsx
 #: src/components/settings/SettingsDialogShell.tsx
 #: src/components/TerminalNewChatButton.tsx
@@ -5121,10 +5189,6 @@ msgstr "{file} নিষ্ক্রিয় করুন"
 msgid "Disable {id}"
 msgstr "নিষ্ক্রিয় করুন {id}"
 
-#: src/components/settings/LinkPreviewsSection.tsx
-msgid "Disable external link previews"
-msgstr "বাইরের লিংকের প্রাকদর্শন নিষ্ক্রিয় করুন"
-
 #: src/components/settings/SearchSection.tsx
 msgid "Disable semantic search"
 msgstr "অর্থভিত্তিক অনুসন্ধান নিষ্ক্রিয় করুন"
@@ -5252,6 +5316,10 @@ msgstr "নথিগুলোর সাড়া প্রত্যাশিত 
 msgid "Documents tagged <0>#{tagName}</0>"
 msgstr "<0>#{tagName}</0> ট্যাগযুক্ত নথি"
 
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Don't ask again when opening this app without setup in this project"
+msgstr "এই প্রকল্পে সেটআপ ছাড়া এই অ্যাপ খুললে আবার জিজ্ঞাসা করবেন না"
+
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "Don't see <0>Skills</0>? Enable <1>Settings <2/> Capabilities <3/> Code execution and file creation</1> first."
 msgstr "<0>Skills</0> দেখতে পাচ্ছেন না? আগে <1>Settings <2/> Capabilities <3/> Code execution and file creation</1> চালু করুন।"
@@ -5312,6 +5380,11 @@ msgstr "{0} {1} ডাউনলোড হচ্ছে…"
 #: src/components/ShareReceiveDialog.tsx
 msgid "Downloads a fresh copy from GitHub."
 msgstr "GitHub থেকে একটি নতুন অনুলিপি ডাউনলোড করে।"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Draft"
+msgstr "খসড়া"
 
 #: src/components/empty-state/use-create-suggestions.ts
 msgid "Draft a spec"
@@ -5714,10 +5787,6 @@ msgstr "স্বয়ংক্রিয় (শুধু টানুন) চ�
 msgid "Enable Auto (Pull only)?"
 msgstr "স্বয়ংক্রিয় (শুধু টানুন) চালু করবেন?"
 
-#: src/components/settings/LinkPreviewsSection.tsx
-msgid "Enable external link previews"
-msgstr "বাইরের লিংকের প্রাকদর্শন চালু করুন"
-
 #: src/components/settings/LintingSection.tsx
 msgid "Enable indexes"
 msgstr "সূচী সক্রিয় করুন"
@@ -6006,7 +6075,6 @@ msgstr "বাহ্যিক"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 msgid "External apps"
 msgstr "বাহ্যিক অ্যাপ"
@@ -6018,6 +6086,10 @@ msgstr "বাইরের লিংক"
 #: src/components/settings/LinkPreviewsSection.tsx
 msgid "External link previews"
 msgstr "বাইরের লিংকের প্রাকদর্শন"
+
+#: src/components/settings/LinkPreviewsSection.tsx
+msgid "External link previews and GitHub reference cards"
+msgstr "বাইরের লিংকের প্রাকদর্শন ও GitHub রেফারেন্স কার্ড"
 
 #: src/components/settings/LinkPreviewsSection.tsx
 msgid "External link previews show a card with the site name, page title, and description when you hover a link."
@@ -6965,6 +7037,10 @@ msgstr "কঠিন বিরতি"
 msgid "Hard to use"
 msgstr "ব্যবহার করা কঠিন"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Has merge conflicts"
+msgstr "মার্জ কনফ্লিক্ট আছে"
+
 #: src/components/acp/working-status.ts
 msgid "Having a look around…"
 msgstr "চারপাশে দেখা হচ্ছে…"
@@ -7437,6 +7513,10 @@ msgstr "একটি লগ নথিতে: এন্ট্রি শিরো�
 msgid "In a subfolder"
 msgstr "একটি উপ-ফোল্ডারে"
 
+#: src/components/settings/LinkPreviewsSection.tsx
+msgid "In an agent chat, hovering a link to a GitHub pull request or issue asks GitHub for its status, signed in as you when OpenKnowledge can use your GitHub sign-in."
+msgstr "এজেন্ট চ্যাটে কোনো GitHub পুল রিকোয়েস্ট বা ইস্যুর লিংকের উপর মাউস নিলে GitHub-এর কাছে তার অবস্থা জানতে চাওয়া হয়, আর OpenKnowledge আপনার GitHub সাইন-ইন ব্যবহার করতে পারলে আপনার হয়ে।"
+
 #: src/components/settings/LintingSection.tsx
 msgid "In an index document: entries sit under a section heading and each one carries a link. Prose around the lists is fine."
 msgstr "একটি সূচক নথিতে: এন্ট্রিগুলি একটি বিভাগের শিরোনামের নীচে বসে এবং প্রতিটি একটি লিঙ্ক বহন করে। তালিকার চারপাশে গদ্য ঠিক আছে।"
@@ -7445,7 +7525,6 @@ msgstr "একটি সূচক নথিতে: এন্ট্রিগু�
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 #: src/components/TerminalNewChatButton.tsx
 msgid "In app"
@@ -7462,6 +7541,14 @@ msgstr "Git প্রকল্পে, Open Knowledge একটি স্কো�
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "In the Claude Desktop App"
 msgstr "Claude Desktop App-এ"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "In the merge queue"
+msgstr "মার্জ কিউতে আছে"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "In the merge queue, but it can't merge"
+msgstr "মার্জ কিউতে আছে, কিন্তু মার্জ করা যাবে না"
 
 #: src/components/acp/ThreadView.tsx
 msgid "In the plan above, please "
@@ -7822,10 +7909,6 @@ msgstr "যেখানে ইনস্টল হবে"
 msgid "installs:"
 msgstr "ইনস্টল:"
 
-#: src/components/handoff/OpenInAgentMenu.tsx
-msgid "Instruction for the AI"
-msgstr "AI-এর জন্য নির্দেশ"
-
 #: src/components/settings/IntegrationsSection.tsx
 #: src/components/settings/SettingsDialogShell.tsx
 msgid "Integrations"
@@ -7926,12 +8009,12 @@ msgstr "অ্যাংকর করা লেখায় যান"
 msgid "Jump to the markdown source for the block at the cursor, centered and highlighted."
 msgstr "কার্সরে থাকা ব্লকের markdown সোর্সে যান, মাঝখানে ও হাইলাইট করা অবস্থায়।"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/FolderOverview.tsx
 #: src/components/FolderTimelineCard.tsx
 #: src/components/SyncStatusBadge.tsx
 #: src/components/TimelinePanel.tsx
 #: src/editor/link-preview/InternalDocPreviewCard.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "just now"
 msgstr "এইমাত্র"
 
@@ -8028,6 +8111,10 @@ msgstr "লেবেল <0>(দৃশ্যমান লিংকের লে�
 msgid "Language"
 msgstr "ভাষা"
 
+#: src/components/SessionsHost.tsx
+msgid "Last activity {lastActivity}"
+msgstr "শেষ কার্যকলাপ: {lastActivity}"
+
 #: src/components/ActivityPanelBurstRow.tsx
 msgid "Latest edit"
 msgstr "সর্বশেষ সম্পাদনা"
@@ -8066,6 +8153,10 @@ msgstr "ফোল্ডারের যেকোনো গভীরতায় 
 msgid "Leave these comments out of this message"
 msgstr "এই মন্তব্যগুলো এই বার্তার বাইরে রাখুন"
 
+#: src/components/settings/settings-fields.ts
+msgid "Let agent chats use a browser"
+msgstr "এজেন্ট চ্যাটকে ব্রাউজার ব্যবহার করতে দিন"
+
 #: src/components/settings/TerminalSection.tsx
 msgid "Let agents use OpenKnowledge without asking"
 msgstr "এজেন্টদের না জিজ্ঞেস করেই OpenKnowledge ব্যবহার করতে দিন"
@@ -8101,6 +8192,10 @@ msgstr "প্রতিটি অনুরোধে পাঠানো মোট
 #: src/components/ProblemsPanel.tsx
 msgid "line {displayLine}"
 msgstr "লাইন {displayLine}"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Lines changed: {additions} added, {deletions} removed"
+msgstr "পরিবর্তিত লাইন: {additions}টি যোগ, {deletions}টি বাদ"
 
 #: src/components/settings/SkillTargetsPicker.tsx
 #: src/editor/bubble-menu/LinkEditPopover.tsx
@@ -8578,6 +8673,11 @@ msgstr "মাঝারি বিভাগ শিরোনাম।"
 msgid "Mention a page"
 msgstr "একটি পাতা উল্লেখ করুন"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Merged"
+msgstr "মার্জ হয়েছে"
+
 #: src/components/MermaidDocEditor.tsx
 #: src/editor/components/Mermaid.tsx
 msgid "Mermaid diagram"
@@ -8978,6 +9078,10 @@ msgstr "নেভিগেশন ও পরামর্শ"
 msgid "Navigation history"
 msgstr "নেভিগেশনের ইতিহাস"
 
+#: src/components/SessionsHost.tsx
+msgid "Needs you to sign in"
+msgstr "আপনাকে সাইন ইন করতে হবে"
+
 #: src/components/settings/OkignoreSection.tsx
 msgid "Nested .okignore error in {path}"
 msgstr "{path}-এ নেস্টেড .okignore ত্রুটি"
@@ -9016,6 +9120,10 @@ msgstr "নতুন"
 #: src/components/TerminalNewChatButton.tsx
 msgid "New {0} chat"
 msgstr "নতুন {0} আলাপ"
+
+#: src/components/SessionsHost.tsx
+msgid "New activity"
+msgstr "নতুন কার্যকলাপ"
 
 #: src/components/OkBlobRunner.tsx
 msgid "New best · press <0>Space</0> to play again"
@@ -9672,6 +9780,11 @@ msgstr "এই প্রকল্পে এখনো ইনস্টল হয�
 msgid "Not now"
 msgstr "এখন নয়"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Not planned"
+msgstr "পরিকল্পনায় নেই"
+
 #: src/components/ReportBugDialogBody.tsx
 msgid "Not redacted. Check the image before sharing."
 msgstr "সংবেদনশীল তথ্য আড়াল করা হয়নি। শেয়ার করার আগে ছবিটি পরীক্ষা করুন।"
@@ -9679,6 +9792,10 @@ msgstr "সংবেদনশীল তথ্য আড়াল করা হ�
 #: src/components/settings/SearchSection.tsx
 msgid "Not required for a loopback endpoint like <0>{endpointHost}</0> — most local servers ignore it. Add one only if yours needs it."
 msgstr "<0>{endpointHost}</0>-এর মতো loopback এন্ডপয়েন্টের জন্য দরকার নেই — বেশিরভাগ স্থানীয় সার্ভার এটি উপেক্ষা করে। আপনার সার্ভারের দরকার হলেই কেবল একটি যোগ করুন।"
+
+#: src/components/SessionsHost.tsx
+msgid "Not running"
+msgstr "চলছে না"
 
 #: src/components/BugReportHistory.tsx
 msgid "Not sent"
@@ -9787,8 +9904,8 @@ msgid "Older"
 msgstr "পুরোনো"
 
 #: src/components/settings/LinkPreviewsSection.tsx
-msgid "On — hovering an external link sends its URL to the destination site to fetch a preview."
-msgstr "চালু — কোনো বাইরের লিংকের উপর মাউস নিলে প্রাকদর্শন আনতে তার URL গন্তব্য সাইটে পাঠানো হয়।"
+msgid "On — hovering an external link sends its URL to the destination site to fetch a preview, and hovering a GitHub reference in an agent chat asks GitHub for it."
+msgstr "চালু — কোনো বাইরের লিংকের উপর মাউস নিলে প্রাকদর্শন আনতে তার URL গন্তব্য সাইটে পাঠানো হয়, আর এজেন্ট চ্যাটে কোনো GitHub রেফারেন্সের উপর মাউস নিলে GitHub-এর কাছে চাওয়া হয়।"
 
 #: src/components/settings/SearchSection.tsx
 msgid "On — your search queries and the text of matching pages are sent to your embeddings provider (OpenAI by default) to compute embeddings."
@@ -9849,6 +9966,11 @@ msgstr "কেবল বর্তমান নথিটিই <0>#{tag}</0> ব�
 msgid "Open"
 msgstr "খুলুন"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Open"
+msgstr "খোলা"
+
 #. placeholder {0}: status.remote.label
 #: src/components/settings/SyncSection.tsx
 #: src/components/SyncStatusBadge.tsx
@@ -9867,6 +9989,10 @@ msgstr "{displayName} Desktop খুলুন"
 #: src/components/acp/ThreadView.tsx
 msgid "Open {docName}"
 msgstr "{docName} খুলুন"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Open {handoffLabel}"
+msgstr "{handoffLabel} খুলুন"
 
 #: src/components/PropertyWidgets.tsx
 msgid "Open {keyName} in browser"
@@ -10180,14 +10306,12 @@ msgstr "দৃশ্য-সম্পাদকের খোঁজা বদলা
 #: src/components/CommandPalette.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Open with AI"
 msgstr "AI দিয়ে খুলুন"
 
 #: src/components/CommandPalette.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Open with AI {displayName} Desktop"
 msgstr "AI {displayName} Desktop দিয়ে খুলুন"
 
@@ -10212,6 +10336,10 @@ msgstr "ওয়ার্কট্রি খুলুন"
 #: src/lib/keyboard-shortcuts.ts
 msgid "Open, navigate, accept, or dismiss CodeMirror completion suggestions."
 msgstr "CodeMirror-এর সম্পূর্ণকরণ পরামর্শ খুলুন, তাতে চলাচল করুন, গ্রহণ করুন, বা সরিয়ে দিন।"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Opened by {author}"
+msgstr "{author} খুলেছেন"
 
 #: src/lib/install-onboarding-toast.ts
 msgid "Opened existing OpenKnowledge project at {ancestorPath}"
@@ -11417,6 +11545,14 @@ msgstr "এই প্রকল্পের OpenKnowledge সেটিং পড�
 msgid "Reads unresolved conflicts between edits"
 msgstr "সম্পাদনার মধ্যে অমীমাংসিত দ্বন্দ্ব পড়ে"
 
+#: src/components/SessionsHost.tsx
+msgid "Ready"
+msgstr "প্রস্তুত"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Ready to merge"
+msgstr "মার্জের জন্য প্রস্তুত"
+
 #: src/components/SeedDialog.tsx
 msgid "Ready-made folders and templates to get you started quickly."
 msgstr "দ্রুত শুরু করার জন্য তৈরি ফোল্ডার ও টেমপ্লেট।"
@@ -11933,6 +12069,10 @@ msgstr "একটি বাগ জানান"
 msgid "Report a bug…"
 msgstr "একটি বাগ জানান…"
 
+#: src/components/acp/ThreadView.tsx
+msgid "Report a problem with this chat…"
+msgstr "এই চ্যাটের সমস্যা জানান…"
+
 #. placeholder {0}: row.projectSlug
 #: src/components/BugReportHistory.tsx
 msgid "Report from {0}"
@@ -11986,6 +12126,10 @@ msgstr "আবশ্যক"
 #: src/components/settings/frontmatter-schema-field-editor.tsx
 msgid "Required"
 msgstr "আবশ্যক"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Required checks are failing"
+msgstr "আবশ্যিক চেক ব্যর্থ হচ্ছে"
 
 #: src/components/handoff/OpenInAgentMenuItem.tsx
 msgid "Requires {brand}."
@@ -13106,8 +13250,8 @@ msgid "Show {hiddenCount} more"
 msgstr "আরও {hiddenCount}টি দেখান"
 
 #: src/components/settings/LinkPreviewsSection.tsx
-msgid "Show a preview card when you hover an external link in the editor."
-msgstr "সম্পাদকে কোনো বাইরের লিংকের উপর মাউস নিলে একটি প্রাকদর্শন কার্ড দেখান।"
+msgid "Show a preview card when you hover an external link in the editor or a GitHub pull request or issue in an agent chat."
+msgstr "সম্পাদকে কোনো বাইরের লিংক বা এজেন্ট চ্যাটে কোনো GitHub পুল রিকোয়েস্ট বা ইস্যুর উপর মাউস নিলে একটি প্রাকদর্শন কার্ড দেখান।"
 
 #: src/components/settings/OkignoreSection.tsx
 msgid "Show advanced"
@@ -13212,6 +13356,14 @@ msgstr "প্যানেল দেখান"
 msgid "Show panel ({panelShortcutLabel})"
 msgstr "প্যানেল দেখান ({panelShortcutLabel})"
 
+#: src/components/settings/AgentConnectionsSection.tsx
+msgid "Show prompts again"
+msgstr "আবার নির্দেশনা দেখান"
+
+#: src/components/settings/AgentConnectionsSection.tsx
+msgid "Show prompts again for {displayName} in this project"
+msgstr "আবার নির্দেশনা দেখান: এই প্রকল্পে {displayName}-এর জন্য"
+
 #: src/editor/find-replace/FindReplaceBar.tsx
 msgid "Show replace"
 msgstr "বদলানো দেখান"
@@ -13311,6 +13463,10 @@ msgstr "সাইন ইন ব্যর্থ: {0}"
 #: src/lib/transports/auth-transport.ts
 msgid "Sign-in stream ended without confirmation — please try again"
 msgstr "সাইন-ইন স্ট্রিম নিশ্চিতকরণ ছাড়াই শেষ হয়েছে — অনুগ্রহ করে আবার চেষ্টা করুন"
+
+#: src/components/SessionsHost.tsx
+msgid "Signing in"
+msgstr "সাইন ইন হচ্ছে"
 
 #: src/components/acp/ThreadView.tsx
 msgid "Signing in to {agentName}"
@@ -13491,6 +13647,10 @@ msgstr "Slidev চালু হতে সময় শেষ হয়ে গে
 msgid "Small section heading."
 msgstr "ছোট বিভাগ শিরোনাম।"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Some checks failed, but it can still merge"
+msgstr "কিছু চেক ব্যর্থ হয়েছে, তবে এটি এখনও মার্জ করা যায়"
+
 #: src/components/TerminalPanel.tsx
 msgid "Some dropped files could not be inserted safely."
 msgstr "ফেলে দেওয়া কিছু ফাইল নিরাপদে সন্নিবেশ করা যায়নি।"
@@ -13528,6 +13688,7 @@ msgid "Something named \"{name}\" is already in {scopeLabel}, and the server cou
 msgstr "{scopeLabel}-এ “{name}” নামে কিছু আগে থেকেই আছে, আর সার্ভার নিশ্চিত করতে পারেনি সেটি কী। আগের কোনো ব্যর্থ সরানো হয়তো ইচ্ছে করেই সেটি সেখানে রেখে গেছে: মুছে ফেলা বা বদলে ফেলার আগে সেটি মূলটির সঙ্গে মিলিয়ে দেখুন।"
 
 #: src/components/AppErrorBoundary.tsx
+#: src/components/SessionsHost.tsx
 msgid "Something went wrong"
 msgstr "কিছু একটা ভুল হয়েছে"
 
@@ -13673,6 +13834,11 @@ msgstr "＋ বোতাম দিয়ে চ্যাট শুরু কর�
 msgid "Start a new chat"
 msgstr "একটি নতুন আলাপ শুরু করুন"
 
+#. placeholder {0}: formatShortcutLabel('send-comment-queue')
+#: src/comments/CommentSendFooter.tsx
+msgid "Start a new chat ({0})"
+msgstr "একটি নতুন আলাপ শুরু করুন ({0})"
+
 #: src/components/NavigatorApp.tsx
 msgid "Start a new OpenKnowledge project."
 msgstr "একটি নতুন OpenKnowledge প্রকল্প শুরু করুন।"
@@ -13712,6 +13878,10 @@ msgstr "স্টার্টার প্যাক"
 #: src/components/CreateProjectDialog.tsx
 msgid "Starter packs"
 msgstr "স্টার্টার প্যাক"
+
+#: src/components/SessionsHost.tsx
+msgid "Starting"
+msgstr "শুরু হচ্ছে"
 
 #: src/components/acp/ThreadView.tsx
 msgid "Starting {agentName}…"
@@ -13799,6 +13969,10 @@ msgstr "ঠিক করা থামান। যেসব ফাইল আগ�
 #: src/components/settings/LintingSection.tsx
 msgid "Stop maintaining index.md"
 msgstr "index.md বজায় রাখা বন্ধ করুন"
+
+#: src/components/SessionsHost.tsx
+msgid "Stopped"
+msgstr "থেমে গেছে"
 
 #: src/lib/project-fix-sweep-store.ts
 msgid "Stopped fixing. Files already fixed stay fixed."
@@ -14155,7 +14329,6 @@ msgstr "উপলব্ধ টেমপ্লেট"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/McpConsentDialogBody.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 #: src/components/settings/SettingsDialogShell.tsx
@@ -14326,6 +14499,38 @@ msgstr "এজেন্ট কাজ করছে"
 msgid "The agent isn't stopping. Force stop closes this chat and quits the agent."
 msgstr "এজেন্ট থামছে না। ফোর্স স্টপ এই চ্যাট বন্ধ করবে এবং এজেন্ট থেকে বেরিয়ে যাবে।"
 
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process ended on its own."
+msgstr "এজেন্ট প্রসেসটি নিজে থেকেই শেষ হয়ে গেছে।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process stopped for an unknown reason."
+msgstr "এজেন্ট প্রসেসটি অজানা কারণে থেমে গেছে।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process stopped with exit code {code}."
+msgstr "এজেন্ট প্রসেসটি এক্সিট কোড {code} সহ থেমে গেছে।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was killed (SIGKILL). That usually comes from the system, for example when memory runs out, or from another process ending it."
+msgstr "এজেন্ট প্রসেসটি বন্ধ করে দেওয়া হয়েছে (SIGKILL)। এটি সাধারণত সিস্টেম থেকে আসে, যেমন মেমরি ফুরিয়ে গেলে, অথবা অন্য কোনো প্রসেস এটি বন্ধ করলে।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was stopped by a {signal} signal."
+msgstr "এজেন্ট প্রসেসটি {signal} সিগন্যালের কারণে থেমে গেছে।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was told to stop ({signal}) by something outside this chat."
+msgstr "এই চ্যাটের বাইরের কিছু এজেন্ট প্রসেসটিকে থামতে বলেছে ({signal})।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent ran out of memory."
+msgstr "এজেন্টের মেমরি ফুরিয়ে গেছে।"
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent's installation is missing files (a module could not be found). Reinstalling the agent usually fixes this."
+msgstr "এজেন্টের ইনস্টলেশনে ফাইল অনুপস্থিত (একটি মডিউল পাওয়া যায়নি)। এজেন্ট পুনরায় ইনস্টল করলে সাধারণত এটি ঠিক হয়ে যায়।"
+
 #: src/lib/acp/tool-failure-hint.ts
 msgid "The agent's OpenKnowledge tools couldn't reach the server. Ask the agent to try again, and if it keeps failing, start a new chat."
 msgstr "এজেন্টের OpenKnowledge টুলগুলো সার্ভারে পৌঁছাতে পারেনি। এজেন্টকে আবার চেষ্টা করতে বলুন, আর বারবার ব্যর্থ হলে একটি নতুন চ্যাট শুরু করুন।"
@@ -14358,9 +14563,25 @@ msgstr "বোর্ড ভিউয়ার লোড করা যায়�
 msgid "The board's content is not a valid Excalidraw scene."
 msgstr "বোর্ডের বিষয়বস্তু কোনো বৈধ Excalidraw দৃশ্য নয়।"
 
+#: src/components/acp/ThreadView.tsx
+msgid "The browser isn't available in this chat because it couldn't be set up. OpenKnowledge's log has the details."
+msgstr "এই চ্যাটে ব্রাউজার উপলভ্য নয়, কারণ এটি সেট আপ করা যায়নি। OpenKnowledge-এর লগে বিস্তারিত আছে।"
+
+#: src/components/acp/ThreadView.tsx
+msgid "The browser isn't available in this chat because no Node.js install that can start it was found. Install Node.js, then start a new chat."
+msgstr "এই চ্যাটে ব্রাউজার উপলভ্য নয়, কারণ এটি চালু করতে পারে এমন কোনো Node.js ইনস্টল পাওয়া যায়নি। Node.js ইনস্টল করুন, তারপর একটি নতুন চ্যাট শুরু করুন।"
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "The chat's messages, tool calls, and their output, so we can see what the agent did, plus the chat's title, the project folder's path, the document it started from, and the agent and its settings. Images are replaced by their type and size, and attached text files are included. It can contain document content, so uncheck it if you'd rather not share it."
+msgstr "চ্যাটের বার্তা, টুল কল এবং সেগুলোর আউটপুট, যাতে আমরা দেখতে পারি এজেন্ট কী করেছে, সেই সঙ্গে এর শিরোনাম, প্রকল্পের ফোল্ডারের পথ, যে নথি থেকে এটি শুরু হয়েছিল এবং এজেন্ট ও তার সেটিং। ছবির জায়গায় সেগুলোর ধরন ও আকার দেওয়া হয়, আর সংযুক্ত টেক্সট ফাইল অন্তর্ভুক্ত থাকে। এতে নথির বিষয়বস্তু থাকতে পারে, তাই ভাগ করতে না চাইলে এটি অচিহ্নিত করে দিন।"
+
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "The Claude Desktop App didn't open the file. Is it installed? ({msg})"
 msgstr "Claude Desktop App ফাইলটি খোলেনি। সেটি কি ইনস্টল করা আছে? ({msg})"
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "The conversation couldn't be added to this report."
+msgstr "কথোপকথনটি এই রিপোর্টে যোগ করা যায়নি।"
 
 #: src/lib/skills-api.ts
 msgid "The copy of \"{name}\" kept in {scopeLabel} is a redundant duplicate: the original was verified unchanged. Remove that copy, then retry the move."
@@ -14468,8 +14689,8 @@ msgid "The OpenKnowledge server took too long to answer. Ask the agent to try ag
 msgstr "OpenKnowledge সার্ভার সাড়া দিতে অনেক সময় নিয়েছে। এজেন্টকে আবার চেষ্টা করতে বলুন।"
 
 #: src/comments/ThreadCard.tsx
-msgid "The original text was deleted. You can re-place this comment on selected text."
-msgstr "মূল লেখাটি মুছে ফেলা হয়েছে। আপনি এই মন্তব্যটি নির্বাচিত লেখার উপর আবার বসাতে পারেন।"
+msgid "The original text was deleted."
+msgstr "মূল লেখাটি মুছে ফেলা হয়েছে।"
 
 #: src/components/SkillFileCreateDialog.tsx
 msgid "The path can't leave the skill (no . or ..)"
@@ -14863,6 +15084,10 @@ msgstr "এই উপাদানটি সরানো হয়েছে।"
 #: src/editor/ComposerMentionInput.tsx
 msgid "This composer doesn't accept attachments."
 msgstr "এখানে ফাইল যুক্ত করা যায় না।"
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "This conversation"
+msgstr "এই কথোপকথন"
 
 #: src/components/acp/ThreadView.tsx
 msgid "This conversation keeps the window it started with. A new chat can use a different one."
@@ -15304,6 +15529,10 @@ msgstr "করণীয়"
 #: src/uninstall/UninstallNoticeScreen.tsx
 msgid "To do."
 msgstr "করণীয়।"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "To save this setup, turn on Project MCP server or Global MCP server."
+msgstr "এই সেটআপ সংরক্ষণ করতে, প্রকল্প MCP সার্ভার বা গ্লোবাল MCP সার্ভার চালু করুন।"
 
 #: src/components/acp/ThreadHistoryPanel.tsx
 msgid "Today"
@@ -16137,7 +16366,12 @@ msgstr "দৃশ্য সম্পাদকের টেবিল নির্
 msgid "Waiting for authorization"
 msgstr "অনুমোদনের অপেক্ষা"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Waiting for review"
+msgstr "পর্যালোচনার অপেক্ষায়"
+
 #: src/components/acp/ThreadView.tsx
+#: src/components/SessionsHost.tsx
 msgid "Waiting for your approval"
 msgstr "আপনার অনুমোদনের অপেক্ষা"
 
@@ -16215,10 +16449,6 @@ msgstr "অনুলিপি ও সিমলিংকের মধ্যে �
 #: src/components/PublishToGitHubDialog.tsx
 msgid "What is this knowledge base for?"
 msgstr "এই জ্ঞানভাণ্ডারটি কিসের জন্য?"
-
-#: src/components/handoff/OpenInAgentMenu.tsx
-msgid "What should the AI do? (optional)"
-msgstr "AI-এর কী করা উচিত? (ঐচ্ছিক)"
 
 #: src/components/acp/ThreadView.tsx
 msgid "What should we work on?"
@@ -16367,6 +16597,7 @@ msgstr "এই মন্তব্যগুলো নিয়ে কাজ ক�
 
 #: src/components/McpConsentDialogBody.tsx
 #: src/components/NewWorktreeDialog.tsx
+#: src/components/SessionsHost.tsx
 #: src/components/SkillEditorActions.tsx
 msgid "Working"
 msgstr "কাজ চলছে"

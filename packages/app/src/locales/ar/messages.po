@@ -15,8 +15,8 @@ msgstr ""
 
 #: src/components/acp/AttachFilesButton.tsx
 #: src/components/ComposerAddMenu.tsx
-msgid " · references only (no embedded contents)"
-msgstr " · مراجع فقط (بدون محتوى مضمن)"
+msgid " · project files as references"
+msgstr " · ملفات المشروع كمراجع"
 
 #: src/components/settings/HotkeysSection.tsx
 msgid " or "
@@ -33,6 +33,14 @@ msgstr " تمت استعادة تحديدك."
 #: src/components/settings/LintingSection.tsx
 msgid "— except"
 msgstr "— باستثناء"
+
+#: src/components/SessionsHost.tsx
+msgid ", {status}"
+msgstr "، {status}"
+
+#: src/components/SessionsHost.tsx
+msgid ", {status}, new activity"
+msgstr "، {status}، نشاط جديد"
 
 #: src/components/acp/ThreadView.tsx
 msgid "… earlier output trimmed"
@@ -391,6 +399,11 @@ msgstr "تم تحديد {0} من {1} مشروع"
 msgid "{0} of {1} selected"
 msgstr "تم تحديد {0} من {1}"
 
+#. placeholder {0}: threadIds.length
+#: src/comments/CommentSendFooter.tsx
+msgid "{0} of {totalCount}"
+msgstr "{0} من {totalCount}"
+
 #. placeholder {0}: resolvedTarget.displayName
 #: src/components/BottomComposer.tsx
 #: src/components/empty-state/CreatePromptComposer.tsx
@@ -614,6 +627,10 @@ msgstr "يحتاج {agentName} إلى تسجيل دخولك."
 msgid "{agentName} reported: {headline}"
 msgstr "{agentName} أبلغ: {headline}"
 
+#: src/components/acp/ThreadView.tsx
+msgid "{agentName} stopped unexpectedly."
+msgstr "توقّف {agentName} بشكل غير متوقّع."
+
 #: src/components/acp/thread-auth-offer.ts
 msgid "{agentName} stopped with an error."
 msgstr "توقّف {agentName} بسبب خطأ."
@@ -675,6 +692,22 @@ msgstr "{conflictCount, plural, zero {# تعارض} one {تعارض واحد} tw
 #: src/components/SyncStatusBadge.tsx
 msgid "{conflictCount, plural, one {# file conflicted} other {# files conflicted}}"
 msgstr "{conflictCount, plural, zero {# ملف متعارض} one {ملف واحد متعارض} two {ملفان متعارضان} few {# ملفات متعارضة} many {# ملفًا متعارضًا} other {# ملف متعارض}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} is larger than {capKb} KB, so it can't be sent with the message. Add it to your project, then mention it with @.} other {{files} are each larger than {capKb} KB, so they can't be sent with the message. Add them to your project, then mention them with @.}}"
+msgstr "{count, plural, zero {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.} one {{files} أكبر من {capKb} KB، لذا لا يمكن إرساله مع الرسالة. أضفه إلى مشروعك، ثم اذكره باستخدام @.} two {{files} أكبر من {capKb} KB لكل منهما، لذا لا يمكن إرسالهما مع الرسالة. أضفهما إلى مشروعك، ثم اذكرهما باستخدام @.} few {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.} many {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.} other {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} is larger than {capKb} KB, so it can't be sent with the message. Mention it with @ once it's in your project.} other {{files} are each larger than {capKb} KB, so they can't be sent with the message. Mention them with @ once they're in your project.}}"
+msgstr "{count, plural, zero {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.} one {{files} أكبر من {capKb} KB، لذا لا يمكن إرساله مع الرسالة. اذكره باستخدام @ عندما يكون في مشروعك.} two {{files} أكبر من {capKb} KB لكل منهما، لذا لا يمكن إرسالهما مع الرسالة. اذكرهما باستخدام @ عندما يكونان في مشروعك.} few {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.} many {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.} other {{files} أكبر من {capKb} KB لكل منها، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} isn't a text file, so it can't be sent with the message. Add it to your project, then mention it with @.} other {{files} aren't text files, so they can't be sent with the message. Add them to your project, then mention them with @.}}"
+msgstr "{count, plural, zero {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.} one {{files} ليس ملفًا نصيًا، لذا لا يمكن إرساله مع الرسالة. أضفه إلى مشروعك، ثم اذكره باستخدام @.} two {{files} ليسا ملفين نصيين، لذا لا يمكن إرسالهما مع الرسالة. أضفهما إلى مشروعك، ثم اذكرهما باستخدام @.} few {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.} many {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.} other {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. أضفها إلى مشروعك، ثم اذكرها باستخدام @.}}"
+
+#: src/lib/acp/image-attachment.ts
+msgid "{count, plural, one {{files} isn't a text file, so it can't be sent with the message. Mention it with @ once it's in your project.} other {{files} aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.}}"
+msgstr "{count, plural, zero {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.} one {{files} ليس ملفًا نصيًا، لذا لا يمكن إرساله مع الرسالة. اذكره باستخدام @ عندما يكون في مشروعك.} two {{files} ليسا ملفين نصيين، لذا لا يمكن إرسالهما مع الرسالة. اذكرهما باستخدام @ عندما يكونان في مشروعك.} few {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.} many {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.} other {{files} ليست ملفات نصية، لذا لا يمكن إرسالها مع الرسالة. اذكرها باستخدام @ عندما تكون في مشروعك.}}"
 
 #: src/comments/comment-chips.tsx
 msgid "{count, plural, one {# comment} other {# comments}}"
@@ -745,7 +778,7 @@ msgstr "{count} مهارات"
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr "{days, plural, zero {قبل # يوم} one {قبل يوم واحد} two {قبل يومين} few {قبل # أيام} many {قبل # يومًا} other {قبل # يوم}}"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{days}d ago"
 msgstr "قبل {days} يوم"
 
@@ -809,7 +842,6 @@ msgstr "{displayName} ({bin}) غير مثبَّت أو غير موجود في PA
 #: src/components/empty-state/CreatePromptComposer.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 msgid "{displayName} CLI"
 msgstr "واجهة {displayName} السطرية"
@@ -880,10 +912,10 @@ msgstr "{folderCount, plural, zero {مجلدات} one {مجلد} two {مجلدا
 msgid "{formatted} GitHub stars"
 msgstr "{formatted} نجمة على GitHub"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/ActivityModeContent.tsx
 #: src/components/ActivityPanelFileRow.tsx
 #: src/components/SyncStatusBadge.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{hours}h ago"
 msgstr "قبل {hours} ساعة"
 
@@ -965,25 +997,17 @@ msgstr "{mcpTool} من خادم MCP {server}"
 msgid "{mins, plural, one {# min ago} other {# min ago}}"
 msgstr "{mins, plural, zero {قبل # دقيقة} one {قبل # دقيقة} two {قبل # دقيقة} few {قبل # دقائق} many {قبل # دقيقة} other {قبل # دقيقة}}"
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/ActivityModeContent.tsx
 #: src/components/ActivityPanelBurstRow.tsx
 #: src/components/ActivityPanelFileRow.tsx
 #: src/components/SyncStatusBadge.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "{minutes}m ago"
 msgstr "قبل {minutes} دقيقة"
 
 #: src/components/TerminalNewChatButton.tsx
 msgid "{name} CLI"
 msgstr "واجهة {name} السطرية"
-
-#: src/lib/acp/image-attachment.ts
-msgid "{name} has no resolvable path — the agent can only read files inside the workspace."
-msgstr "{name} ليس له مسار يمكن تحديده — لا يستطيع الوكيل قراءة سوى الملفات الموجودة داخل مساحة العمل."
-
-#: src/lib/acp/image-attachment.ts
-msgid "{name} is outside the workspace. Move it into your project first."
-msgstr "{name} خارج مساحة العمل. انقله إلى مشروعك أولًا."
 
 #: src/components/SkillsSidebarSection.tsx
 msgid "{name} moved, but its pin did not. Pin it again after settings finish loading."
@@ -1001,10 +1025,9 @@ msgstr "{omitted, plural, zero {# تغيير خصائص إضافي غير معر
 msgid "{openedWorktreeCount, plural, one {worktree} other {worktrees}}"
 msgstr "{openedWorktreeCount, plural, one {شجرة عمل} other {أشجار عمل}}"
 
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{outsideWorkspaceCount, plural, one {Skipped # file outside the workspace.} other {Skipped # files outside the workspace.}}"
-msgstr "{outsideWorkspaceCount, plural, zero {تم تخطي # ملف خارج مساحة العمل.} one {تم تخطي ملف خارج مساحة العمل.} two {تم تخطي ملفين خارج مساحة العمل.} few {تم تخطي # ملفات خارج مساحة العمل.} many {تم تخطي # ملفًا خارج مساحة العمل.} other {تم تخطي # ملف خارج مساحة العمل.}}"
+#: src/lib/acp/image-attachment.ts
+msgid "{others, plural, one {# other} other {# others}}"
+msgstr "{others, plural, zero {# ملف آخر} one {ملف آخر} two {ملفان آخران} few {# ملفات أخرى} many {# ملفًا آخر} other {# ملف آخر}}"
 
 #: src/components/PublishToGitHubDialog.tsx
 msgid "{owner}/{name} already exists"
@@ -1112,11 +1135,6 @@ msgstr "{sizeText} · تم إخفاء الأسرار · {fileCount, plural, zero
 msgid "{skillCount, plural, one {skill} other {skills}}"
 msgstr "{skillCount, plural, zero {مهارات} one {مهارة} two {مهارتان} few {مهارات} many {مهارةً} other {مهارة}}"
 
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{skipTotal, plural, one {Skipped # file that couldn't be attached.} other {Skipped # files that couldn't be attached.}}"
-msgstr "{skipTotal, plural, zero {تم تخطي # ملف تعذر إرفاقه.} one {تم تخطي ملف تعذر إرفاقه.} two {تم تخطي ملفين تعذر إرفاقهما.} few {تم تخطي # ملفات تعذر إرفاقها.} many {تم تخطي # ملفًا تعذر إرفاقه.} other {تم تخطي # ملف تعذر إرفاقه.}}"
-
 #. placeholder {0}: BASE16_SLOT_ROLES[slot]
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "{slot} color — {0}"
@@ -1170,11 +1188,6 @@ msgstr "{total, plural, zero {# مشكلة} one {# مشكلة} two {# مشكلت
 #: src/components/FileTree.tsx
 msgid "{truncatedShownCount, plural, one {Showing the first item in one folder — the rest of that folder is hidden.} other {Showing the first {formattedCount} items in one folder — the rest of that folder is hidden.}}"
 msgstr "{truncatedShownCount, plural, zero {يجري عرض أول {formattedCount} عنصر في مجلد واحد — بقية ذلك المجلد مخفية.} one {يجري عرض أول عنصر في مجلد واحد — بقية ذلك المجلد مخفية.} two {يجري عرض أول عنصرين في مجلد واحد — بقية ذلك المجلد مخفية.} few {يجري عرض أول {formattedCount} عناصر في مجلد واحد — بقية ذلك المجلد مخفية.} many {يجري عرض أول {formattedCount} عنصرًا في مجلد واحد — بقية ذلك المجلد مخفية.} other {يجري عرض أول {formattedCount} عنصر في مجلد واحد — بقية ذلك المجلد مخفية.}}"
-
-#: src/components/acp/ThreadView.tsx
-#: src/editor/use-composer-attachments.ts
-msgid "{unknownPathCount, plural, one {Skipped # file — this browser can't attach files by path.} other {Skipped # files — this browser can't attach files by path.}}"
-msgstr "{unknownPathCount, plural, zero {تم تخطي # ملف — لا يمكن لهذا المتصفح إرفاق الملفات عبر المسار.} one {تم تخطي ملف — لا يمكن لهذا المتصفح إرفاق الملفات عبر المسار.} two {تم تخطي ملفين — لا يمكن لهذا المتصفح إرفاق الملفات عبر المسار.} few {تم تخطي # ملفات — لا يمكن لهذا المتصفح إرفاق الملفات عبر المسار.} many {تم تخطي # ملفًا — لا يمكن لهذا المتصفح إرفاق الملفات عبر المسار.} other {تم تخطي # ملف — لا يمكن لهذا المتصفح إرفاق الملفات عبر المسار.}}"
 
 #: src/components/FileTree.tsx
 msgid "{uploadedCount, plural, one {Uploaded one file} other {Uploaded {uploadedCount} files}}"
@@ -1242,6 +1255,10 @@ msgstr "# نمط واحد في كل سطر.\n"
 "#   drafts/\n"
 "#   *.draft.md\n"
 "#   !keep.md"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "#{position} in the merge queue"
+msgstr "#{position} في قائمة انتظار الدمج"
 
 #: src/components/GraphLegend.tsx
 msgid "+ {overflow} more"
@@ -1351,6 +1368,14 @@ msgstr "يوجد بالفعل فرع باسم {shareBranch}. افتح شجرة �
 msgid "A branch with that name already exists. Open its worktree from the switcher instead."
 msgstr "يوجد بالفعل فرع بهذا الاسم. افتح شجرة عمله من المبدِّل بدلًا من ذلك."
 
+#: src/lib/acp/exit-summary.ts
+msgid "A command the agent needs could not be run (exit code {code}). Check that it is executable and that you have permission to run it."
+msgstr "تعذّر تشغيل أمر يحتاجه الوكيل (رمز الخروج {code}). تأكد من أنه قابل للتنفيذ وأن لديك صلاحية تشغيله."
+
+#: src/lib/acp/exit-summary.ts
+msgid "A command the agent needs was not found (exit code {code}). Check that the agent's dependencies are installed and on your PATH."
+msgstr "لم يُعثر على أمر يحتاجه الوكيل (رمز الخروج {code}). تأكد من أن تبعيات الوكيل مثبتة وموجودة في PATH لديك."
+
 #: src/components/SkillInstallMenu.tsx
 msgid "A copy is a real folder of its own, and OK keeps it in step with the source: edit the skill here and every copy is refreshed. That stops the moment you hand-edit a copy outside OK — from then on it goes its own way and shows up as a separate skill."
 msgstr "النسخة مجلد حقيقي قائم بذاته، ويبقيها OK متوافقة مع المصدر: حرِّر المهارة هنا فتُحدَّث كل نسخة. يتوقف ذلك لحظة تحريرك نسخةً يدويًا خارج OK — عندها تسير في طريقها الخاص وتظهر كمهارة منفصلة."
@@ -1417,6 +1442,10 @@ msgstr "جزء جديد على يسار {0}"
 #: src/components/EditorWorkspace.tsx
 msgid "a new pane to the right of {0}"
 msgstr "جزء جديد على يمين {0}"
+
+#: src/components/handoff/useHandoffDispatch.ts
+msgid "A newer handoff replaced this retry."
+msgstr "حلّت عملية تسليم أحدث محل إعادة المحاولة هذه."
 
 #: src/components/settings/SettingsDialogErrorBoundary.tsx
 #: src/components/TerminalGate.tsx
@@ -2098,6 +2127,10 @@ msgstr "ينطبق على"
 msgid "Applies to (globs — leading ! excludes; empty means every doc)"
 msgstr "ينطبق على (أنماط — البادئة ! تستثني؛ والفارغ يعني كل مستند)"
 
+#: src/components/settings/settings-fields.ts
+msgid "Applies to all projects on this machine, in Claude Code and Codex chats in the Agents panel started after you turn it on. The agent can open pages, click, type, and take screenshots in its own Google Chrome window with a fresh profile. Needs Google Chrome and Node.js installed. Every browser action asks for your approval, with no option to always allow it, unless the agent's own mode or permission settings skip approvals."
+msgstr "ينطبق على كل المشاريع على هذا الجهاز، في محادثات Claude Code وCodex في لوحة الوكلاء التي تبدأ بعد تشغيله. يستطيع الوكيل فتح الصفحات والنقر والكتابة والتقاط لقطات الشاشة في نافذة Google Chrome خاصة به بملف تعريف جديد. يتطلب تثبيت Google Chrome وNode.js. يطلب كل إجراء في المتصفح موافقتك، دون خيار للسماح به دائمًا، ما لم يتخطَّ وضع الوكيل نفسه أو إعدادات الأذونات الخاصة به طلبات الموافقة."
+
 #: src/components/settings/TerminalSection.tsx
 msgid "Applies to all projects on this machine. Claude and Codex started from the built-in terminal, and any agent in an in-app Agents panel chat, auto-approve OpenKnowledge's read and write tools (Claude also auto-runs \"ok open\"). Deleting, moving, sharing, importing or installing skills, other commands, and non-OpenKnowledge file edits still ask. In the terminal, Cursor, OpenCode, and Pi are unaffected. Best-effort per agent."
 msgstr "ينطبق على كل المشاريع على هذا الجهاز. Claude وCodex اللذان يُشغَّلان من الطرفية المدمجة، وأي وكيل في محادثة لوحة الوكلاء داخل التطبيق، يوافقون تلقائيًا على أدوات القراءة والكتابة في OpenKnowledge (ويشغّل Claude أيضًا \"ok open\" تلقائيًا). الحذف والنقل والمشاركة واستيراد المهارات أو تثبيتها، والأوامر الأخرى، وتعديل الملفات خارج OpenKnowledge تظل تطلب الإذن. في الطرفية، لا يتأثر Cursor وOpenCode وPi. بأفضل جهد لكل وكيل."
@@ -2150,6 +2183,10 @@ msgstr "موافق عليه"
 msgid "Approved — {optionName}"
 msgstr "موافق عليه — {optionName}"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Approved and ready to merge"
+msgstr "معتمد وجاهز للدمج"
+
 #: src/components/FileTree.tsx
 msgid "Are you sure you want to convert this file into a template? The original file will be deleted. This action cannot be undone."
 msgstr "هل أنت متأكد أنك تريد تحويل هذا الملف إلى قالب؟ سيُحذف الملف الأصلي. لا يمكن التراجع عن هذا الإجراء."
@@ -2195,7 +2232,6 @@ msgstr "اسأل واجهة {0} السطرية"
 #: src/components/handoff/agent-launcher-labels.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Ask {agentName}"
 msgstr "اسأل {agentName}"
 
@@ -2345,6 +2381,10 @@ msgstr "الإصلاح التلقائي ({count})"
 msgid "Auto-fix applies only to problems with a known mechanical fix."
 msgstr "ينطبق الإصلاح التلقائي فقط على المشكلات التي لها إصلاح آلي معروف."
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Auto-merge is on"
+msgstr "الدمج التلقائي مفعّل"
+
 #: src/components/FolderTimelineCard.tsx
 #: src/components/TimelinePanel.tsx
 msgid "Auto-save"
@@ -2460,6 +2500,10 @@ msgstr "قبل المزامنة، اضبط هويتك لإيداعات git:"
 msgid "Before you go, mind sharing why?"
 msgstr "قبل أن تغادر، هل تخبرنا بالسبب؟"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Behind the base branch"
+msgstr "متأخر عن الفرع الأساسي"
+
 #: src/editor/slash-command/items.tsx
 msgid "Below"
 msgstr "أسفل"
@@ -2497,6 +2541,10 @@ msgstr "Blob Run"
 #: src/editor/slash-command/component-items.tsx
 msgid "Block math equation rendered with KaTeX from a LaTeX source string."
 msgstr "معادلة رياضية بكتلة مستقلة تُعرض بواسطة KaTeX من نص مصدري بصيغة LaTeX."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Blocked from merging"
+msgstr "الدمج محظور"
 
 #: src/components/TemplateForm.tsx
 msgid "Blog post"
@@ -2789,6 +2837,10 @@ msgstr "تغيّر خارجًا"
 msgid "Changed outside OK since it last wrote here — the state shown is what's on disk now"
 msgstr "تغيّر خارج OK منذ آخر كتابة هنا — الحالة المعروضة هي ما على القرص الآن"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Changes requested"
+msgstr "طُلبت تغييرات"
+
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "Changes save automatically to this theme."
 msgstr "تُحفظ التغييرات تلقائيًا في هذه السمة."
@@ -2800,6 +2852,10 @@ msgstr "تُحفظ التغييرات تلقائيًا."
 #: src/components/settings/CustomThemeEditor.tsx
 msgid "Changes saved automatically."
 msgstr "حُفظت التغييرات تلقائيًا."
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Changes were saved, but OpenKnowledge could not confirm a connection to {handoffLabel}. Check the MCP server settings for this app, then select Save changes to check again."
+msgstr "تم حفظ التغييرات، لكن تعذّر على OpenKnowledge تأكيد الاتصال بـ {handoffLabel}. تحقّق من إعدادات خادم MCP لهذا التطبيق، ثم اختر حفظ التغييرات للتحقق مرة أخرى."
 
 #: src/components/settings/SearchSection.tsx
 msgid "Character budget per indexing request"
@@ -2857,6 +2913,10 @@ msgstr "تحقق منه: {0}"
 #: src/components/SkillEditorActions.tsx
 msgid "Checking"
 msgstr "يجري التحقق"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Checking connection to {checkingLabel}…"
+msgstr "جارٍ التحقق من الاتصال بـ {checkingLabel}…"
 
 #: src/components/BottomComposer.tsx
 msgid "Checking for agents"
@@ -2918,6 +2978,10 @@ msgstr "يجري التحقق..."
 #: src/editor/slash-command/items.tsx
 msgid "Checklist with checkboxes."
 msgstr "قائمة تحقق بمربعات اختيار."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Checks are running"
+msgstr "الفحوصات قيد التشغيل"
 
 #: src/lib/acp/tool-call-display.ts
 msgid "Checks documents for markdown problems and can fix them"
@@ -3239,6 +3303,11 @@ msgstr "إغلاق النافذة"
 msgid "Close Window"
 msgstr "إغلاق النافذة"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Closed"
+msgstr "مغلق"
+
 #: src/components/GraphLegend.tsx
 msgid "Clusters"
 msgstr "التجمعات"
@@ -3483,7 +3552,6 @@ msgstr "تحذيرات الإعداد"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/SessionsHost.tsx
 #: src/components/settings/SettingsDialogShell.tsx
 #: src/components/TerminalNewChatButton.tsx
@@ -5125,10 +5193,6 @@ msgstr "تعطيل {file}"
 msgid "Disable {id}"
 msgstr "تعطيل {id}"
 
-#: src/components/settings/LinkPreviewsSection.tsx
-msgid "Disable external link previews"
-msgstr "تعطيل معاينات الروابط الخارجية"
-
 #: src/components/settings/SearchSection.tsx
 msgid "Disable semantic search"
 msgstr "تعطيل البحث الدلالي"
@@ -5256,6 +5320,10 @@ msgstr "لم تطابق استجابة المستندات الشكل المتو�
 msgid "Documents tagged <0>#{tagName}</0>"
 msgstr "مستندات موسومة بـ <0>#{tagName}</0>"
 
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Don't ask again when opening this app without setup in this project"
+msgstr "لا تسألني مجددًا عند فتح هذا التطبيق دون إعداده في هذا المشروع"
+
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "Don't see <0>Skills</0>? Enable <1>Settings <2/> Capabilities <3/> Code execution and file creation</1> first."
 msgstr "لا ترى <0>المهارات</0>؟ فعّل <1>الإعدادات <2/> القدرات <3/> تنفيذ الكود وإنشاء الملفات</1> أولًا."
@@ -5316,6 +5384,11 @@ msgstr "يجري تنزيل {0} {1}…"
 #: src/components/ShareReceiveDialog.tsx
 msgid "Downloads a fresh copy from GitHub."
 msgstr "ينزّل نسخة جديدة من GitHub."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Draft"
+msgstr "مسودة"
 
 #: src/components/empty-state/use-create-suggestions.ts
 msgid "Draft a spec"
@@ -5718,10 +5791,6 @@ msgstr "تفعيل تلقائي (سحب فقط)"
 msgid "Enable Auto (Pull only)?"
 msgstr "تفعيل تلقائي (سحب فقط)؟"
 
-#: src/components/settings/LinkPreviewsSection.tsx
-msgid "Enable external link previews"
-msgstr "تفعيل معاينات الروابط الخارجية"
-
 #: src/components/settings/LintingSection.tsx
 msgid "Enable indexes"
 msgstr "تمكين الفهارس"
@@ -6010,7 +6079,6 @@ msgstr "خارجي"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 msgid "External apps"
 msgstr "تطبيقات خارجية"
@@ -6022,6 +6090,10 @@ msgstr "رابط خارجي"
 #: src/components/settings/LinkPreviewsSection.tsx
 msgid "External link previews"
 msgstr "معاينات الروابط الخارجية"
+
+#: src/components/settings/LinkPreviewsSection.tsx
+msgid "External link previews and GitHub reference cards"
+msgstr "معاينات الروابط الخارجية وبطاقات مراجع GitHub"
 
 #: src/components/settings/LinkPreviewsSection.tsx
 msgid "External link previews show a card with the site name, page title, and description when you hover a link."
@@ -6969,6 +7041,10 @@ msgstr "فاصل صريح"
 msgid "Hard to use"
 msgstr "صعب الاستخدام"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Has merge conflicts"
+msgstr "توجد تعارضات دمج"
+
 #: src/components/acp/working-status.ts
 msgid "Having a look around…"
 msgstr "يجري إلقاء نظرة…"
@@ -7441,6 +7517,10 @@ msgstr "في مستند السجل: تبدأ عناوين الإدخال بتا�
 msgid "In a subfolder"
 msgstr "في مجلد فرعي"
 
+#: src/components/settings/LinkPreviewsSection.tsx
+msgid "In an agent chat, hovering a link to a GitHub pull request or issue asks GitHub for its status, signed in as you when OpenKnowledge can use your GitHub sign-in."
+msgstr "في محادثة مع وكيل، يؤدي تمرير المؤشر فوق رابط لطلب سحب أو مشكلة على GitHub إلى سؤال GitHub عن حالته، باستخدام تسجيل دخولك إلى GitHub عندما يستطيع OpenKnowledge استخدامه."
+
 #: src/components/settings/LintingSection.tsx
 msgid "In an index document: entries sit under a section heading and each one carries a link. Prose around the lists is fine."
 msgstr "في مستند الفهرس: توجد الإدخالات تحت عنوان القسم ويحمل كل منها رابطًا. النثر حول القوائم على ما يرام."
@@ -7449,7 +7529,6 @@ msgstr "في مستند الفهرس: توجد الإدخالات تحت عنو�
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 #: src/components/TerminalNewChatButton.tsx
 msgid "In app"
@@ -7466,6 +7545,14 @@ msgstr "في مشاريع Git، يضيف Open Knowledge أيضًا قاعدة .g
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "In the Claude Desktop App"
 msgstr "في تطبيق Claude Desktop"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "In the merge queue"
+msgstr "في قائمة انتظار الدمج"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "In the merge queue, but it can't merge"
+msgstr "في قائمة انتظار الدمج، لكن لا يمكن دمجه"
 
 #: src/components/acp/ThreadView.tsx
 msgid "In the plan above, please "
@@ -7826,10 +7913,6 @@ msgstr "يُثبَّت في"
 msgid "installs:"
 msgstr "التثبيتات:"
 
-#: src/components/handoff/OpenInAgentMenu.tsx
-msgid "Instruction for the AI"
-msgstr "تعليمات للذكاء الاصطناعي"
-
 #: src/components/settings/IntegrationsSection.tsx
 #: src/components/settings/SettingsDialogShell.tsx
 msgid "Integrations"
@@ -7930,12 +8013,12 @@ msgstr "الانتقال إلى النص المرتبط"
 msgid "Jump to the markdown source for the block at the cursor, centered and highlighted."
 msgstr "انتقل إلى مصدر Markdown للكتلة عند المؤشر، موسّطًا ومظللًا."
 
-#: src/components/acp/ThreadHistoryPanel.tsx
 #: src/components/FolderOverview.tsx
 #: src/components/FolderTimelineCard.tsx
 #: src/components/SyncStatusBadge.tsx
 #: src/components/TimelinePanel.tsx
 #: src/editor/link-preview/InternalDocPreviewCard.tsx
+#: src/lib/acp/relative-activity.ts
 msgid "just now"
 msgstr "الآن"
 
@@ -8032,6 +8115,10 @@ msgstr "التسمية <0>(نص الرابط الظاهر)</0>"
 msgid "Language"
 msgstr "اللغة"
 
+#: src/components/SessionsHost.tsx
+msgid "Last activity {lastActivity}"
+msgstr "آخر نشاط: {lastActivity}"
+
 #: src/components/ActivityPanelBurstRow.tsx
 msgid "Latest edit"
 msgstr "آخر تعديل"
@@ -8070,6 +8157,10 @@ msgstr "استبعد الروابط المعطلة المكتوبة داخل log
 msgid "Leave these comments out of this message"
 msgstr "استبعد هذه التعليقات من هذه الرسالة"
 
+#: src/components/settings/settings-fields.ts
+msgid "Let agent chats use a browser"
+msgstr "اسمح لمحادثات الوكلاء باستخدام متصفح"
+
 #: src/components/settings/TerminalSection.tsx
 msgid "Let agents use OpenKnowledge without asking"
 msgstr "دع الوكلاء يستخدمون OpenKnowledge دون سؤال"
@@ -8105,6 +8196,10 @@ msgstr "يحدّ من إجمالي النص المُرسل في كل طلب. ت�
 #: src/components/ProblemsPanel.tsx
 msgid "line {displayLine}"
 msgstr "السطر {displayLine}"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Lines changed: {additions} added, {deletions} removed"
+msgstr "الأسطر المتغيرة: أُضيف {additions}، وحُذف {deletions}"
 
 #: src/components/settings/SkillTargetsPicker.tsx
 #: src/editor/bubble-menu/LinkEditPopover.tsx
@@ -8582,6 +8677,11 @@ msgstr "عنوان قسم متوسط."
 msgid "Mention a page"
 msgstr "الإشارة إلى صفحة"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Merged"
+msgstr "مدموج"
+
 #: src/components/MermaidDocEditor.tsx
 #: src/editor/components/Mermaid.tsx
 msgid "Mermaid diagram"
@@ -8982,6 +9082,10 @@ msgstr "التنقل والاقتراحات"
 msgid "Navigation history"
 msgstr "سجل التنقل"
 
+#: src/components/SessionsHost.tsx
+msgid "Needs you to sign in"
+msgstr "يلزمك تسجيل الدخول"
+
 #: src/components/settings/OkignoreSection.tsx
 msgid "Nested .okignore error in {path}"
 msgstr "خطأ في .okignore المتداخل في {path}"
@@ -9020,6 +9124,10 @@ msgstr "جديد"
 #: src/components/TerminalNewChatButton.tsx
 msgid "New {0} chat"
 msgstr "محادثة {0} جديدة"
+
+#: src/components/SessionsHost.tsx
+msgid "New activity"
+msgstr "نشاط جديد"
 
 #: src/components/OkBlobRunner.tsx
 msgid "New best · press <0>Space</0> to play again"
@@ -9676,6 +9784,11 @@ msgstr "لم تُثبَّت في هذا المشروع بعد."
 msgid "Not now"
 msgstr "ليس الآن"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Not planned"
+msgstr "غير مخطط له"
+
 #: src/components/ReportBugDialogBody.tsx
 msgid "Not redacted. Check the image before sharing."
 msgstr "لم تُحجب المعلومات الحساسة. تحقق من الصورة قبل مشاركتها."
@@ -9683,6 +9796,10 @@ msgstr "لم تُحجب المعلومات الحساسة. تحقق من الص�
 #: src/components/settings/SearchSection.tsx
 msgid "Not required for a loopback endpoint like <0>{endpointHost}</0> — most local servers ignore it. Add one only if yours needs it."
 msgstr "غير مطلوب لنقطة نهاية loopback مثل <0>{endpointHost}</0> — تتجاهله معظم الخوادم المحلية. أضفه فقط إن كان خادمك يحتاجه."
+
+#: src/components/SessionsHost.tsx
+msgid "Not running"
+msgstr "لا يعمل"
 
 #: src/components/BugReportHistory.tsx
 msgid "Not sent"
@@ -9791,8 +9908,8 @@ msgid "Older"
 msgstr "الأقدم"
 
 #: src/components/settings/LinkPreviewsSection.tsx
-msgid "On — hovering an external link sends its URL to the destination site to fetch a preview."
-msgstr "مفعّل — تمرير المؤشر فوق رابط خارجي يرسل رابطه إلى الموقع الوجهة لجلب معاينة."
+msgid "On — hovering an external link sends its URL to the destination site to fetch a preview, and hovering a GitHub reference in an agent chat asks GitHub for it."
+msgstr "مفعّل — تمرير المؤشر فوق رابط خارجي يرسل رابطه إلى الموقع الوجهة لجلب معاينة، وتمرير المؤشر فوق مرجع GitHub في محادثة مع وكيل يطلبه من GitHub."
 
 #: src/components/settings/SearchSection.tsx
 msgid "On — your search queries and the text of matching pages are sent to your embeddings provider (OpenAI by default) to compute embeddings."
@@ -9853,6 +9970,11 @@ msgstr "المستند الحالي وحده يستخدم <0>#{tag}</0>."
 msgid "Open"
 msgstr "فتح"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgctxt "GitHub pull request or issue state"
+msgid "Open"
+msgstr "مفتوح"
+
 #. placeholder {0}: status.remote.label
 #: src/components/settings/SyncSection.tsx
 #: src/components/SyncStatusBadge.tsx
@@ -9871,6 +9993,10 @@ msgstr "فتح {displayName} Desktop"
 #: src/components/acp/ThreadView.tsx
 msgid "Open {docName}"
 msgstr "فتح {docName}"
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "Open {handoffLabel}"
+msgstr "افتح {handoffLabel}"
 
 #: src/components/PropertyWidgets.tsx
 msgid "Open {keyName} in browser"
@@ -10184,14 +10310,12 @@ msgstr "افتح بحث المحرر المرئي مع توسيع عناصر ا�
 #: src/components/CommandPalette.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Open with AI"
 msgstr "الفتح بالذكاء الاصطناعي"
 
 #: src/components/CommandPalette.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 msgid "Open with AI {displayName} Desktop"
 msgstr "الفتح بالذكاء الاصطناعي {displayName} Desktop"
 
@@ -10216,6 +10340,10 @@ msgstr "فتح شجرة العمل"
 #: src/lib/keyboard-shortcuts.ts
 msgid "Open, navigate, accept, or dismiss CodeMirror completion suggestions."
 msgstr "افتح اقتراحات الإكمال في CodeMirror وتنقّل بينها واقبلها أو تجاهلها."
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Opened by {author}"
+msgstr "فتحه {author}"
 
 #: src/lib/install-onboarding-toast.ts
 msgid "Opened existing OpenKnowledge project at {ancestorPath}"
@@ -11421,6 +11549,14 @@ msgstr "يقرأ إعدادات OpenKnowledge لهذا المشروع"
 msgid "Reads unresolved conflicts between edits"
 msgstr "يقرأ التعارضات غير المحلولة بين التعديلات"
 
+#: src/components/SessionsHost.tsx
+msgid "Ready"
+msgstr "جاهز"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Ready to merge"
+msgstr "جاهز للدمج"
+
 #: src/components/SeedDialog.tsx
 msgid "Ready-made folders and templates to get you started quickly."
 msgstr "مجلدات وقوالب جاهزة لتبدأ بسرعة."
@@ -11937,6 +12073,10 @@ msgstr "الإبلاغ عن علة"
 msgid "Report a bug…"
 msgstr "الإبلاغ عن علة…"
 
+#: src/components/acp/ThreadView.tsx
+msgid "Report a problem with this chat…"
+msgstr "الإبلاغ عن مشكلة في هذه المحادثة…"
+
 #. placeholder {0}: row.projectSlug
 #: src/components/BugReportHistory.tsx
 msgid "Report from {0}"
@@ -11990,6 +12130,10 @@ msgstr "مطلوب"
 #: src/components/settings/frontmatter-schema-field-editor.tsx
 msgid "Required"
 msgstr "مطلوب"
+
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Required checks are failing"
+msgstr "الفحوصات المطلوبة تفشل"
 
 #: src/components/handoff/OpenInAgentMenuItem.tsx
 msgid "Requires {brand}."
@@ -13110,8 +13254,8 @@ msgid "Show {hiddenCount} more"
 msgstr "إظهار {hiddenCount} إضافية"
 
 #: src/components/settings/LinkPreviewsSection.tsx
-msgid "Show a preview card when you hover an external link in the editor."
-msgstr "أظهر بطاقة معاينة عند تمرير المؤشر فوق رابط خارجي في المحرر."
+msgid "Show a preview card when you hover an external link in the editor or a GitHub pull request or issue in an agent chat."
+msgstr "أظهر بطاقة معاينة عند تمرير المؤشر فوق رابط خارجي في المحرر أو فوق طلب سحب أو مشكلة على GitHub في محادثة مع وكيل."
 
 #: src/components/settings/OkignoreSection.tsx
 msgid "Show advanced"
@@ -13216,6 +13360,14 @@ msgstr "إظهار اللوحة"
 msgid "Show panel ({panelShortcutLabel})"
 msgstr "إظهار اللوحة ({panelShortcutLabel})"
 
+#: src/components/settings/AgentConnectionsSection.tsx
+msgid "Show prompts again"
+msgstr "إظهار المطالبات مجددًا"
+
+#: src/components/settings/AgentConnectionsSection.tsx
+msgid "Show prompts again for {displayName} in this project"
+msgstr "إظهار المطالبات مجددًا لـ {displayName} في هذا المشروع"
+
 #: src/editor/find-replace/FindReplaceBar.tsx
 msgid "Show replace"
 msgstr "إظهار الاستبدال"
@@ -13315,6 +13467,10 @@ msgstr "فشل تسجيل الدخول: {0}"
 #: src/lib/transports/auth-transport.ts
 msgid "Sign-in stream ended without confirmation — please try again"
 msgstr "انتهى بث تسجيل الدخول دون تأكيد — يرجى المحاولة مرة أخرى"
+
+#: src/components/SessionsHost.tsx
+msgid "Signing in"
+msgstr "جارٍ تسجيل الدخول"
 
 #: src/components/acp/ThreadView.tsx
 msgid "Signing in to {agentName}"
@@ -13495,6 +13651,10 @@ msgstr "انتهت مهلة بدء تشغيل Slidev. حاول مرة أخرى."
 msgid "Small section heading."
 msgstr "عنوان قسم صغير."
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Some checks failed, but it can still merge"
+msgstr "فشلت بعض الفحوصات، لكن لا يزال من الممكن دمجه"
+
 #: src/components/TerminalPanel.tsx
 msgid "Some dropped files could not be inserted safely."
 msgstr "تعذّر إدراج بعض الملفات التي تم إفلاتها بأمان."
@@ -13532,6 +13692,7 @@ msgid "Something named \"{name}\" is already in {scopeLabel}, and the server cou
 msgstr "يوجد بالفعل شيء باسم “{name}” في {scopeLabel}، ولم يتمكن الخادم من تأكيد ماهيته. ربما تركه هناك عن قصد نقلٌ فاشل سابق: قارنه بالنسخة الأصلية قبل حذفه أو استبداله."
 
 #: src/components/AppErrorBoundary.tsx
+#: src/components/SessionsHost.tsx
 msgid "Something went wrong"
 msgstr "حدث خطأ ما"
 
@@ -13677,6 +13838,11 @@ msgstr "ابدأ محادثة بزر ＋، أو شغّل وكيلاً من صف�
 msgid "Start a new chat"
 msgstr "بدء محادثة جديدة"
 
+#. placeholder {0}: formatShortcutLabel('send-comment-queue')
+#: src/comments/CommentSendFooter.tsx
+msgid "Start a new chat ({0})"
+msgstr "بدء محادثة جديدة ({0})"
+
 #: src/components/NavigatorApp.tsx
 msgid "Start a new OpenKnowledge project."
 msgstr "ابدأ مشروع OpenKnowledge جديدًا."
@@ -13716,6 +13882,10 @@ msgstr "حزمة بداية"
 #: src/components/CreateProjectDialog.tsx
 msgid "Starter packs"
 msgstr "حزم البداية"
+
+#: src/components/SessionsHost.tsx
+msgid "Starting"
+msgstr "جارٍ البدء"
 
 #: src/components/acp/ThreadView.tsx
 msgid "Starting {agentName}…"
@@ -13803,6 +13973,10 @@ msgstr "أوقف الإصلاح. تبقى الملفات المُصلَحة با
 #: src/components/settings/LintingSection.tsx
 msgid "Stop maintaining index.md"
 msgstr "توقف عن صيانة index.md"
+
+#: src/components/SessionsHost.tsx
+msgid "Stopped"
+msgstr "متوقف"
 
 #: src/lib/project-fix-sweep-store.ts
 msgid "Stopped fixing. Files already fixed stay fixed."
@@ -14159,7 +14333,6 @@ msgstr "قوالب متاحة"
 #: src/components/handoff/AgentSplitButton.tsx
 #: src/components/handoff/OpenInAgentContextSubmenu.tsx
 #: src/components/handoff/OpenInAgentEmptySpaceSubmenu.tsx
-#: src/components/handoff/OpenInAgentMenu.tsx
 #: src/components/McpConsentDialogBody.tsx
 #: src/components/settings/AgentConnectionsSection.tsx
 #: src/components/settings/SettingsDialogShell.tsx
@@ -14330,6 +14503,38 @@ msgstr "الوكيل يعمل"
 msgid "The agent isn't stopping. Force stop closes this chat and quits the agent."
 msgstr "الوكيل لا يتوقف. الإيقاف القسري يغلق هذه المحادثة وينهي الوكيل."
 
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process ended on its own."
+msgstr "انتهت عملية الوكيل من تلقاء نفسها."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process stopped for an unknown reason."
+msgstr "توقفت عملية الوكيل لسبب غير معروف."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process stopped with exit code {code}."
+msgstr "توقفت عملية الوكيل برمز الخروج {code}."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was killed (SIGKILL). That usually comes from the system, for example when memory runs out, or from another process ending it."
+msgstr "تم إنهاء عملية الوكيل قسرًا (SIGKILL). يأتي هذا عادةً من النظام، مثلًا عند نفاد الذاكرة، أو من عملية أخرى أنهتها."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was stopped by a {signal} signal."
+msgstr "توقفت عملية الوكيل بسبب إشارة {signal}."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent process was told to stop ({signal}) by something outside this chat."
+msgstr "طلب شيء من خارج هذه المحادثة من عملية الوكيل أن تتوقف ({signal})."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent ran out of memory."
+msgstr "نفدت ذاكرة الوكيل."
+
+#: src/lib/acp/exit-summary.ts
+msgid "The agent's installation is missing files (a module could not be found). Reinstalling the agent usually fixes this."
+msgstr "ينقص تثبيت الوكيل بعض الملفات (تعذّر العثور على وحدة). إعادة تثبيت الوكيل تحل هذا عادةً."
+
 #: src/lib/acp/tool-failure-hint.ts
 msgid "The agent's OpenKnowledge tools couldn't reach the server. Ask the agent to try again, and if it keeps failing, start a new chat."
 msgstr "تعذّر على أدوات OpenKnowledge لدى الوكيل الوصول إلى الخادم. اطلب من الوكيل أن يعيد المحاولة، وإذا استمر الفشل فابدأ محادثة جديدة."
@@ -14362,9 +14567,25 @@ msgstr "تعذّر تحميل عارض اللوحة. تحقق من اتصالك 
 msgid "The board's content is not a valid Excalidraw scene."
 msgstr "محتوى اللوحة ليس مشهد Excalidraw صالحًا."
 
+#: src/components/acp/ThreadView.tsx
+msgid "The browser isn't available in this chat because it couldn't be set up. OpenKnowledge's log has the details."
+msgstr "المتصفح غير متاح في هذه المحادثة لأنه تعذّر إعداده. يحتوي سجل OpenKnowledge على التفاصيل."
+
+#: src/components/acp/ThreadView.tsx
+msgid "The browser isn't available in this chat because no Node.js install that can start it was found. Install Node.js, then start a new chat."
+msgstr "المتصفح غير متاح في هذه المحادثة لأنه لم يُعثر على تثبيت لـ Node.js يمكنه تشغيله. ثبّت Node.js، ثم ابدأ محادثة جديدة."
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "The chat's messages, tool calls, and their output, so we can see what the agent did, plus the chat's title, the project folder's path, the document it started from, and the agent and its settings. Images are replaced by their type and size, and attached text files are included. It can contain document content, so uncheck it if you'd rather not share it."
+msgstr "رسائل المحادثة واستدعاءات الأدوات ومخرجاتها، لنتمكن من رؤية ما فعله الوكيل، بالإضافة إلى عنوانها ومسار مجلد المشروع والمستند الذي بدأت منه والوكيل وإعداداته. تُستبدل الصور بنوعها وحجمها، وتُضمَّن الملفات النصية المرفقة. قد تحتوي على محتوى المستندات، لذا ألغِ تحديدها إن كنت تفضّل عدم مشاركتها."
+
 #: src/components/InstallInClaudeDesktopDialog.tsx
 msgid "The Claude Desktop App didn't open the file. Is it installed? ({msg})"
 msgstr "لم يفتح تطبيق Claude Desktop الملف. هل هو مثبَّت؟ ({msg})"
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "The conversation couldn't be added to this report."
+msgstr "تعذّرت إضافة المحادثة إلى هذا التقرير."
 
 #: src/lib/skills-api.ts
 msgid "The copy of \"{name}\" kept in {scopeLabel} is a redundant duplicate: the original was verified unchanged. Remove that copy, then retry the move."
@@ -14472,8 +14693,8 @@ msgid "The OpenKnowledge server took too long to answer. Ask the agent to try ag
 msgstr "استغرق خادم OpenKnowledge وقتا طويلا للرد. اطلب من الوكيل المحاولة مرة أخرى."
 
 #: src/comments/ThreadCard.tsx
-msgid "The original text was deleted. You can re-place this comment on selected text."
-msgstr "تم حذف النص الأصلي. يمكنك إعادة وضع هذا التعليق على النص المحدد."
+msgid "The original text was deleted."
+msgstr "تم حذف النص الأصلي."
 
 #: src/components/SkillFileCreateDialog.tsx
 msgid "The path can't leave the skill (no . or ..)"
@@ -14867,6 +15088,10 @@ msgstr "تمت إزالة هذا المكوّن."
 #: src/editor/ComposerMentionInput.tsx
 msgid "This composer doesn't accept attachments."
 msgstr "لا يمكن إرفاق الملفات هنا."
+
+#: src/components/ReportBugDialogBody.tsx
+msgid "This conversation"
+msgstr "هذه المحادثة"
 
 #: src/components/acp/ThreadView.tsx
 msgid "This conversation keeps the window it started with. A new chat can use a different one."
@@ -15308,6 +15533,10 @@ msgstr "للقيام به"
 #: src/uninstall/UninstallNoticeScreen.tsx
 msgid "To do."
 msgstr "للقيام به."
+
+#: src/components/handoff/ExternalHandoffGate.tsx
+msgid "To save this setup, turn on Project MCP server or Global MCP server."
+msgstr "لحفظ هذا الإعداد، فعّل خادم MCP للمشروع أو خادم MCP عام."
 
 #: src/components/acp/ThreadHistoryPanel.tsx
 msgid "Today"
@@ -16141,7 +16370,12 @@ msgstr "تحديد جدول المحرر المرئي"
 msgid "Waiting for authorization"
 msgstr "في انتظار التفويض"
 
+#: src/components/acp/GitHubReferenceCard.tsx
+msgid "Waiting for review"
+msgstr "في انتظار المراجعة"
+
 #: src/components/acp/ThreadView.tsx
+#: src/components/SessionsHost.tsx
 msgid "Waiting for your approval"
 msgstr "في انتظار موافقتك"
 
@@ -16219,10 +16453,6 @@ msgstr "ما الفرق بين النسخ والروابط الرمزية؟"
 #: src/components/PublishToGitHubDialog.tsx
 msgid "What is this knowledge base for?"
 msgstr "ما الغرض من قاعدة المعرفة هذه؟"
-
-#: src/components/handoff/OpenInAgentMenu.tsx
-msgid "What should the AI do? (optional)"
-msgstr "ما الذي ينبغي أن يفعله الذكاء الاصطناعي؟ (اختياري)"
 
 #: src/components/acp/ThreadView.tsx
 msgid "What should we work on?"
@@ -16371,6 +16601,7 @@ msgstr "اعمل على هذه التعليقات"
 
 #: src/components/McpConsentDialogBody.tsx
 #: src/components/NewWorktreeDialog.tsx
+#: src/components/SessionsHost.tsx
 #: src/components/SkillEditorActions.tsx
 msgid "Working"
 msgstr "يعمل"

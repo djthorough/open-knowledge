@@ -144,7 +144,7 @@ describe('ConfigSchema coverage (NR3 — every leaf has fieldRegistry metadata)'
     expect(allowlisted).toEqual([]);
   });
 
-  test('user-strict fields cover agents.autoApproveOkTools + appearance.{colorTheme*,customTheme.*,language,preview.autoOpen,theme} + editor.{previewTabs,wordWrap} + git.hosts + slides.enabled', () => {
+  test('user-strict fields cover agents.{autoApproveOkTools,browserTools} + appearance.{colorTheme*,customTheme.*,language,preview.autoOpen,theme} + editor.{previewTabs,wordWrap} + git.hosts + slides.enabled', () => {
     const leaves: { path: string[]; schema: unknown }[] = [];
     walkLeaves(ConfigSchema, [], leaves);
     const userStrict = leaves
@@ -153,6 +153,7 @@ describe('ConfigSchema coverage (NR3 — every leaf has fieldRegistry metadata)'
       .sort();
     expect(userStrict).toEqual([
       'agents.autoApproveOkTools',
+      'agents.browserTools',
       'appearance.colorTheme',
       'appearance.colorThemeDark',
       'appearance.colorThemeEnabled',
@@ -188,7 +189,7 @@ describe('ConfigSchema coverage (NR3 — every leaf has fieldRegistry metadata)'
     ]);
   });
 
-  test('project-strict fields cover autoSync.default + content.* + contentRules.* + lossCapture.* + telemetry.localSink.*', () => {
+  test('project-strict fields cover autolinks + autoSync.default + content.* + contentRules.* + lossCapture.* + telemetry.localSink.*', () => {
     const leaves: { path: string[]; schema: unknown }[] = [];
     walkLeaves(ConfigSchema, [], leaves);
     const projectStrict = leaves
@@ -197,6 +198,7 @@ describe('ConfigSchema coverage (NR3 — every leaf has fieldRegistry metadata)'
       .sort();
     expect(projectStrict).toEqual([
       'autoSync.default',
+      'autolinks',
       'bridge.backgroundThrottle.enabled',
       'bridge.deferGuard.enabled',
       'bridge.fixedPoint.enabled',

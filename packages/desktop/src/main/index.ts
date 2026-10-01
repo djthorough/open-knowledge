@@ -116,6 +116,7 @@ import type {
 import {
   app,
   BrowserWindow,
+  ClipboardItem,
   clipboard,
   crashReporter,
   dialog,
@@ -332,6 +333,7 @@ import {
 } from './ipc-handlers.ts';
 import { logIpcError, withIpcErrorLogging } from './ipc-log.ts';
 import { createDesktopKeepaliveFactory, toKeepaliveLogger } from './keepalive.ts';
+import { getBootAmbientCapsFacts, logAmbientCapsPosture } from './linux-ambient-caps.ts';
 import {
   detectGraphicalAuthCommand,
   runManualInstallFallbackDialog,
@@ -609,8 +611,6 @@ function fanOutChromeColors(): void {
 const DEFAULT_WIN_OPTS: BrowserWindowConstructorOptions = {
   width: 1280,
   height: 800,
-  minWidth: WINDOW_MIN_SIZE.NAVIGATOR.width,
-  minHeight: WINDOW_MIN_SIZE.NAVIGATOR.height,
   show: false,
   ...(process.platform === 'darwin'
     ? {
@@ -621,6 +621,8 @@ const DEFAULT_WIN_OPTS: BrowserWindowConstructorOptions = {
         transparent: true,
       }
     : buildNonDarwinChromeOpts(nativeTheme.shouldUseDarkColors)),
+  minWidth: WINDOW_MIN_SIZE.NAVIGATOR.width,
+  minHeight: WINDOW_MIN_SIZE.NAVIGATOR.height,
   webPreferences: {
     contextIsolation: true,
     nodeIntegration: false,
@@ -1369,6 +1371,7 @@ function ensureWindowManager() {
       } as unknown as Parameters<typeof utilityProcess.fork>[2]);
       return child as unknown as UtilityProcessLike;
     },
+    terminalAuthAvailable: isTerminalAvailable(),
     utilityEntryPath,
     ...(bundleCliMjsPath !== null
       ? {
@@ -1429,6 +1432,7 @@ function ensureWindowManager() {
                 otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
               }),
               ...(singleFile !== undefined ? { singleFile, projectDir } : {}),
+              terminalAuthAvailable: isTerminalAvailable(),
             });
             let childRef: ReturnType<typeof spawn>;
             startupWaterfall.mark('serverSpawned');
@@ -2119,6 +2123,7 @@ async function openProjectOrFallbackToNavigator(
       },
       '[main] openProject failed, falling back to Navigator',
     );
+    flushDesktopLogger();
     let dialogTitle = 'Unable to open project';
     let dialogBody = `${projectPath}\n\n${errorMessage}`;
     if (kind === 'mcp-server-stuck') {
@@ -2187,12 +2192,14 @@ async function openProjectOrFallbackToNavigator(
               },
               '[main] openProject retry after stopping the conflicting server failed',
             );
+            flushDesktopLogger();
             dialog.showErrorBox(
               'Unable to open project',
               `${projectPath}\n\n${(retryErr as Error).message}`,
             );
           }
         } else {
+          flushDesktopLogger();
           dialog.showErrorBox(
             'Unable to open project',
             `${projectPath}\n\n` +
@@ -2213,6 +2220,7 @@ async function openProjectOrFallbackToNavigator(
         );
         if (isStaleLockHolder) {
           const stopCommandTarget = quoteStopCommandPath(projectPath, process.platform);
+          flushDesktopLogger();
           dialog.showErrorBox(
             dialogTitle,
             `${dialogBody}\n\n` +
@@ -4241,9 +4249,7 @@ function registerIpcHandlers() {
               params.relPath,
             );
           },
-          copyLink: () => {
-            clipboard.writeText(params.relPath);
-          },
+          copyLink: () => clipboard.writeText(params.relPath),
         },
       },
     );
@@ -4404,11 +4410,11 @@ function registerIpcHandlers() {
   });
 
   handle('ok:clipboard:write-text', async (_event, text) => {
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
     return undefined;
   });
 
-  handle('ok:clipboard:copy-image', async (event, { src, alt }) => {
+  handle('ok:clipboard:copy-image', async (event, { src }) => {
     const callerWin = BrowserWindow.fromWebContents(event.sender);
     if (!callerWin || !wm) {
       return { ok: false as const, reason: 'read-error' as const, detail: 'no window context' };
@@ -4417,16 +4423,24 @@ function registerIpcHandlers() {
     if (!projectPath || !apiOrigin) {
       return { ok: false as const, reason: 'read-error' as const, detail: 'no project context' };
     }
-    return copyImageToClipboard(
+    const result = await copyImageToClipboard(
       {
         projectPath,
         platform: process.platform,
         assetOrigin: apiOrigin,
         clipboard,
+        ClipboardItem,
         nativeImage,
       },
-      { src, alt },
+      { src },
     );
+    if (!result.ok) {
+      getLogger('copy-image').warn(
+        { reason: result.reason, detail: result.detail },
+        'copy image to clipboard failed',
+      );
+    }
+    return result;
   });
 
   handle('ok:locale:set-preference', async (_event, { preference }) => {
@@ -5803,7 +5817,7 @@ function installDockIcon(instanceLabel: string | null) {
   if (process.platform !== 'darwin') return;
   if (app.isPackaged) return;
   /*
-   * UPSTREAM(electron@43.4.0): an unpackaged app runs out of Electron's own
+   * UPSTREAM(electron@44.5.1): an unpackaged app runs out of Electron's own
    * bundle, so macOS reads the Dock tile name from that Info.plist and
    * `app.setName()` cannot reach it. A badge is the only runtime way to put an
    * instance label on the Dock icon.
@@ -5891,6 +5905,13 @@ applyDevShmPosture({
   log: (level, facts) =>
     getRootDesktopLogger()[level](facts, 'linux shared-memory posture for chromium'),
 });
+
+const bootAmbientCapsFacts = getBootAmbientCapsFacts();
+if (bootAmbientCapsFacts) {
+  logAmbientCapsPosture(bootAmbientCapsFacts, (level, facts) =>
+    getRootDesktopLogger()[level](facts, 'linux ambient capabilities posture'),
+  );
+}
 
 if (!app.isPackaged) {
   const resolved = resolveEffectiveInstanceName(process.env, app.getAppPath(), {
@@ -6010,6 +6031,7 @@ function bootPrimaryInstance(): void {
   });
   crashDetection = createCrashDetection({
     sentinelPath: join(app.getPath('userData'), 'bug-report-dirty-shutdown.json'),
+    mainExitPath: join(app.getPath('userData'), 'bug-report-main-exit.json'),
     ackStorePath: join(app.getPath('userData'), 'bug-report-crash-acks.json'),
     crashDumpsDir: app.getPath('crashDumps'),
     appBundleRoot: appBundleRootFromExecutable(app.getPath('exe')),
@@ -6037,9 +6059,13 @@ function bootPrimaryInstance(): void {
       ),
     mainThreadWatchdog: createMainThreadWatchdog({
       path: join(app.getPath('userData'), 'bug-report-main-thread-liveness.json'),
+      stallPath: join(app.getPath('userData'), 'bug-report-main-thread-stall.json'),
       logger: getLogger('main-thread-watchdog'),
     }),
     logger: getLogger('crash-detection'),
+  });
+  process.on('exit', (code) => {
+    crashDetection?.noteProcessExit(code);
   });
   crashDetection.detectBootCrash();
   rendererRecovery = createRendererRecovery({
@@ -6623,6 +6649,7 @@ function bootPrimaryInstance(): void {
         proxyFeed: {
           base: 'https://openknowledge.ai/updates',
           channels: new Set<UpdateChannel>(['beta', 'latest']),
+          betaChannel: DESKTOP_VARIANT.name === 'beta' ? 'beta-product' : 'beta',
         },
         whenRendererReady: (fn) => {
           const tryFire = (win: BrowserWindow): void => {

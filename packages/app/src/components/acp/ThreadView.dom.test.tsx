@@ -1,4 +1,10 @@
-import type { ThreadEvent, ThreadInfo } from '@inkeep/open-knowledge-core/acp/thread-protocol';
+import {
+  THREAD_EXIT_STDERR_WINDOW_LINES,
+  type ThreadAuthTerminalLaunch,
+  type ThreadEvent,
+  type ThreadExitDiagnosis,
+  type ThreadInfo,
+} from '@inkeep/open-knowledge-core/acp/thread-protocol';
 import { i18n } from '@lingui/core';
 import {
   act,
@@ -11,17 +17,23 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest';
+import { notifySignInTerminalExited } from '@/components/handoff/sign-in-terminal-events';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MAX_TOTAL_ATTACHMENT_BYTES } from '@/lib/acp/image-attachment';
+import { stubImageCanvas } from '@/lib/acp/image-canvas.test-helper';
 import type { RemoteModelCandidate } from '@/lib/acp/model-candidates';
 import type {
   RenderedItem,
   RenderedTerminal,
   ThreadRenderModel,
 } from '@/lib/acp/thread-event-model';
-import { expectVisualClassTokensAbsent } from '@/test-utils/visual-contract';
+import { installPointerPositionTracker } from '@/lib/pointer-position';
+import {
+  expectVisualClassTokens,
+  expectVisualClassTokensAbsent,
+} from '@/test-utils/visual-contract';
 import { MockComposerMentionInput } from './composer-mention-input.test-helper';
 
 i18n.load('en', {});
@@ -53,7 +65,19 @@ const sendQueuedNow = vi.fn((_threadId: string, _id: string) => {});
 const setChatGrant = vi.fn((_threadId: string, _grant: string, _enabled: boolean) => {});
 const toastError = vi.fn((_message: string) => {});
 const cancel = vi.fn((_threadId: string) => {});
-const retryThread = vi.fn(async (_threadId: string) => {});
+const retryThread = vi.fn(
+  async (_threadId: string): Promise<ThreadInfo> => makeInfo({ status: 'ready' }),
+);
+const FIXTURE_TERMINAL_LAUNCH: ThreadAuthTerminalLaunch = {
+  executable: '/rt/bin/npx',
+  args: ['-y', '@augmentcode/auggie@1.2.3', '--acp', 'login'],
+  env: { AUGGIE_LOGIN_FLOW: 'terminal' },
+  pathPrepend: ['/rt/bin'],
+};
+const terminalAuthLaunch = vi.fn(
+  async (_threadId: string, _methodId: string): Promise<ThreadAuthTerminalLaunch> =>
+    FIXTURE_TERMINAL_LAUNCH,
+);
 const createThread = vi.fn(
   async (_params: unknown): Promise<unknown> => ({
     threadId: 'thread-2',
@@ -84,6 +108,7 @@ vi.doMock('@/lib/acp/thread-client', () => ({
     createThread,
     resumeThread,
     retryThread,
+    terminalAuthLaunch,
     authenticateThread,
     getThread: () => null,
     subscribe: () => () => {},
@@ -508,6 +533,7 @@ afterEach(() => {
   toastError.mockClear();
   cancel.mockClear();
   retryThread.mockClear();
+  terminalAuthLaunch.mockClear();
   createThread.mockClear();
   resumeThread.mockClear();
   resetStagedThreadDrafts();
@@ -943,41 +969,28 @@ describe('ThreadView chat header', () => {
     );
   });
 
-  test('the hover text carries the state the accessible name carries', async () => {
+  test('hovering the settings trigger opens no tooltip over the chat', async () => {
     const user = userEvent.setup();
     render(<ThreadView info={headerInfo({ effort: 'max', fast: true })} />);
-    const trigger = screen.getByRole('button', { name: /^Agent settings/ });
 
-    await user.hover(trigger);
+    await user.hover(screen.getByRole('button', { name: /^Agent settings/ }));
 
-    await screen.findByRole('tooltip');
-    const hover = screen.getByTestId('agent-thread-settings-tooltip');
-    expect(hover.textContent).toBe(trigger.getAttribute('aria-label'));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
-  test('the state is described once, so it is not announced twice', async () => {
+  test('composer tooltips close once the pointer leaves the trigger, even toward the tooltip', async () => {
     const user = userEvent.setup();
-    render(<ThreadView info={headerInfo({ effort: 'max', fast: true })} />);
-    const trigger = screen.getByRole('button', { name: /^Agent settings/ });
+    render(<ThreadView info={headerInfo()} />);
+    const addToPrompt = screen.getByTestId('agent-thread-add-to-prompt');
 
-    await user.hover(trigger);
-
-    const described = await screen.findByRole('tooltip');
-    expect(trigger.getAttribute('aria-label')).toContain('Opus 5');
-    expect(described.textContent).toBe('Agent settings');
-  });
-
-  test('the archived hover text carries the resume hint too', async () => {
-    const user = userEvent.setup();
-    render(<ThreadView info={{ ...headerInfo({ effort: 'max', fast: true }), archived: true }} />);
-    const trigger = screen.getByRole('button', { name: /^Agent settings/ });
-
-    await user.hover(trigger);
-
+    await user.hover(addToPrompt);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.queryByRole('tooltip')).toBeNull();
     await screen.findByRole('tooltip');
-    const hover = screen.getByTestId('agent-thread-settings-tooltip');
-    expect(hover.textContent).toBe(trigger.getAttribute('aria-label'));
-    expect(hover.textContent).toContain('changes apply when you pick this conversation back up');
+    await user.unhover(addToPrompt);
+
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull(), { timeout: 200 });
   });
 
   test('an archived thread announces the same state it shows', () => {
@@ -2323,6 +2336,66 @@ describe('ThreadView thought collapse', () => {
     expect(block.textContent).toContain('First thought line');
     expect(block.textContent).toContain('Last thought line');
   });
+
+  test('the collapsed preview shows the markdown as plain text', () => {
+    model = makeModel({
+      turnActive: false,
+      items: [{ ...thought, text: '**Planning the change**\n\nRead `ThreadView.tsx` first.' }],
+    });
+    render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+
+    const toggle = screen.getByTestId('agent-thread-thought-toggle');
+    expect(toggle.textContent).toContain('Planning the change');
+    expect(toggle.textContent).not.toContain('**');
+  });
+
+  test('a streaming preview hides the markers of a bold title still arriving', () => {
+    model = makeModel({
+      turnActive: true,
+      items: [{ ...thought, text: 'Earlier line\n**Checking the te' }],
+    });
+    render(<ThreadView info={makeInfo({ status: 'running' })} />);
+
+    const toggle = screen.getByTestId('agent-thread-thought-toggle');
+    expect(toggle.textContent).toContain('Checking the te');
+    expect(toggle.textContent).not.toContain('**');
+  });
+
+  test.each([
+    ['Earlier line\nNow checking the **config file', 'Now checking the config file'],
+    ['Earlier line\n**Running the\ntest suite**', 'test suite'],
+  ])('a streaming preview of %j hides its emphasis markers', (text, preview) => {
+    model = makeModel({ turnActive: true, items: [{ ...thought, text }] });
+    render(<ThreadView info={makeInfo({ status: 'running' })} />);
+
+    const toggle = screen.getByTestId('agent-thread-thought-toggle');
+    expect(toggle.textContent).toContain(preview);
+    expect(toggle.textContent).not.toContain('**');
+  });
+
+  test('the preview keeps the text of inline code that starts the line', () => {
+    model = makeModel({
+      turnActive: false,
+      items: [{ ...thought, text: '`**kwargs` must be forwarded' }],
+    });
+    render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+
+    expect(screen.getByTestId('agent-thread-thought-toggle').textContent).toContain(
+      '**kwargs must be forwarded',
+    );
+  });
+
+  test('a streaming preview skips a line that renders no text', () => {
+    model = makeModel({
+      turnActive: true,
+      items: [{ ...thought, text: 'Planning the edit\n\n```ts' }],
+    });
+    render(<ThreadView info={makeInfo({ status: 'running' })} />);
+
+    expect(screen.getByTestId('agent-thread-thought-toggle').textContent).toContain(
+      'Planning the edit',
+    );
+  });
 });
 
 describe('ThreadView config value hints', () => {
@@ -2807,9 +2880,9 @@ describe('ThreadView attachment disclosure', () => {
 
     expect(
       screen.getByRole('menuitem', {
-        name: 'Attach files · references only (no embedded contents)',
+        name: 'Attach files · project files as references',
       }).textContent,
-    ).toBe('Attach files · references only (no embedded contents)');
+    ).toBe('Attach files · project files as references');
   });
 
   test('an embedding-capable agent keeps the file option concise', async () => {
@@ -3326,6 +3399,35 @@ describe('ThreadView retry', () => {
     expect(notices[0]?.textContent).not.toContain("couldn't start");
   });
 
+  test('a sign-in cut short by the agent stopping opens no toast, since the crash card explains it', async () => {
+    authenticateResult = Promise.reject(
+      Object.assign(new Error('connection closed'), { code: 'agent-exited' }),
+    );
+    model = makeModel({
+      turnActive: false,
+      items: [
+        {
+          kind: 'notice',
+          text: '',
+          tone: 'info',
+          failure: {
+            reason: 'auth-required',
+            authMethods: [{ id: 'test_login', name: 'Test Login' }],
+          },
+          attempts: 1,
+        },
+      ],
+    });
+    render(<ThreadView info={makeInfo({ status: 'auth_required' })} />);
+
+    fireEvent.click(screen.getByTestId('agent-thread-auth-method'));
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId('agent-thread-auth-method').hasAttribute('disabled')).toBe(false),
+    );
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   test('a refused sign-in surfaces the reason and leaves the button usable', async () => {
     authenticateResult = Promise.reject(new Error('wrong account'));
     model = makeModel({
@@ -3575,6 +3677,25 @@ describe('ThreadView failure notices', () => {
     await userEvent.click(screen.getByTestId('agent-thread-notice-details-toggle'));
     expect(screen.getByTestId('agent-thread-notice-details').textContent).toContain(detail.trim());
     expect(screen.getByTestId('agent-thread-notice').textContent).toContain(explanation);
+  });
+});
+
+describe('ThreadView browser notice', () => {
+  test('says in the chat why the browser is not available', () => {
+    for (const [reason, text] of [
+      ['no-node', 'no Node.js install that can start it was found'],
+      ['failed', "it couldn't be set up"],
+    ] as const) {
+      model = makeModel({
+        turnActive: false,
+        items: [{ kind: 'browser_unavailable', reason, seq: 0 }],
+      });
+      const { unmount } = render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+      const notice = screen.getByTestId('agent-thread-browser-unavailable');
+      expect(notice.getAttribute('role')).toBe('note');
+      expect(notice.textContent).toContain(text);
+      unmount();
+    }
   });
 });
 
@@ -3877,8 +3998,12 @@ describe('the transcript renders both sides as markdown', () => {
   });
 });
 
-describe('ThreadView drop-notice for unattachable files', () => {
+describe('ThreadView drop notice and dropped files', () => {
   const makeFile = (name: string, type: string) => new File(['content'], name, { type });
+  const halfBudgetPng = (name: string) =>
+    new File([new Uint8Array(Math.ceil(MAX_TOTAL_ATTACHMENT_BYTES * 0.6))], name, {
+      type: 'image/png',
+    });
 
   const fireDrop = (files: readonly File[]) => {
     const dt = {
@@ -3896,39 +4021,65 @@ describe('ThreadView drop-notice for unattachable files', () => {
     });
   };
 
-  test('a web-host drop of non-image files renders the unknown-path notice', async () => {
+  test('a web-host drop of non-image files attaches them instead of skipping them', async () => {
     model = makeModel({ items: [], turnActive: false });
     render(<ThreadView info={makeInfo({ status: 'ready' })} />);
     fireDrop([makeFile('foo.ts', 'text/typescript'), makeFile('bar.md', 'text/markdown')]);
-    const notice = await screen.findByTestId('agent-thread-drop-notice');
-    expect(notice.textContent).toContain("this browser can't attach files by path");
-    expect(notice.textContent).toContain('2 files');
+    await waitFor(() =>
+      expect(screen.getAllByTestId('agent-thread-pending-image-remove')).toHaveLength(2),
+    );
+    const notice = screen.getByTestId('agent-thread-drop-notice');
+    expect(notice.textContent).toBe('');
     expect(notice.getAttribute('role')).toBe('status');
     expect(notice.getAttribute('aria-live')).toBe('polite');
   });
 
-  test('the notice clears after the auto-dismiss window', async () => {
-    vi.useFakeTimers();
+  test('binary files dropped together are refused in one notice that names them, with no toast', async () => {
     model = makeModel({ items: [], turnActive: false });
     render(<ThreadView info={makeInfo({ status: 'ready' })} />);
-    fireDrop([makeFile('foo.ts', 'text/typescript')]);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(screen.getByTestId('agent-thread-drop-notice').textContent).toContain('Skipped');
-    act(() => {
-      vi.advanceTimersByTime(4100);
-    });
-    expect(screen.getByTestId('agent-thread-drop-notice').textContent).toBe('');
+    fireDrop([
+      new File([new Uint8Array([0xff, 0xfe, 0xfd])], 'receipt.pdf', { type: 'application/pdf' }),
+      new File([new Uint8Array([0xc3, 0x28])], 'archive.zip', { type: 'application/zip' }),
+    ]);
+    const notice = screen.getByTestId('agent-thread-drop-notice');
+    await vi.waitFor(() =>
+      expect(notice.textContent).toBe(
+        "receipt.pdf and archive.zip aren't text files, so they can't be sent with the message. Mention them with @ once they're in your project.",
+      ),
+    );
+    expect(toastError).not.toHaveBeenCalled();
+    expect(screen.queryAllByTestId('agent-thread-pending-image-remove')).toHaveLength(0);
+  });
+
+  test('the notice clears after the auto-dismiss window', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      model = makeModel({ items: [], turnActive: false });
+      render(
+        <ThreadView info={makeInfo({ status: 'ready', promptCapabilities: { image: true } })} />,
+      );
+      fireDrop([halfBudgetPng('one.png'), halfBudgetPng('two.png')]);
+      await vi.waitFor(() =>
+        expect(screen.getByTestId('agent-thread-drop-notice').textContent).toContain('Skipped'),
+      );
+      act(() => {
+        vi.advanceTimersByTime(4100);
+      });
+      expect(screen.getByTestId('agent-thread-drop-notice').textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('an identical repeat drop still re-fires the notice — state carries a fresh identity so React re-runs the auto-clear effect', async () => {
     model = makeModel({ items: [], turnActive: false });
-    render(<ThreadView info={makeInfo({ status: 'ready' })} />);
-    fireDrop([makeFile('foo.ts', 'text/typescript')]);
+    render(
+      <ThreadView info={makeInfo({ status: 'ready', promptCapabilities: { image: true } })} />,
+    );
+    fireDrop([halfBudgetPng('one.png'), halfBudgetPng('two.png')]);
     const notice = await screen.findByTestId('agent-thread-drop-notice');
     await vi.waitFor(() => expect(notice.textContent).toContain('Skipped'));
-    fireDrop([makeFile('foo.ts', 'text/typescript')]);
+    fireDrop([halfBudgetPng('two.png')]);
     await vi.waitFor(() => expect(notice.textContent).toContain('Skipped'));
   });
 });
@@ -4794,6 +4945,257 @@ describe('ThreadView auth-required dead ends', () => {
     }
   });
 
+  test('an agent whose sign-in is a terminal command runs that command in the terminal', async () => {
+    const launches: unknown[] = [];
+    const onLaunch = (event: Event) => launches.push((event as CustomEvent).detail);
+    window.addEventListener('open-knowledge:terminal-launch', onLaunch);
+    Object.assign(window, {
+      okDesktop: {
+        config: { ptyAvailable: true },
+        terminal: { cliInstalledMap: () => Promise.resolve({}) },
+      },
+    });
+    try {
+      model = makeModel({
+        turnActive: false,
+        items: [
+          authNotice({
+            authMethods: [
+              {
+                id: 'auggie-login',
+                name: 'Log in with Auggie',
+                kind: 'terminal',
+                terminalLaunchAvailable: true,
+              },
+            ],
+          }),
+        ],
+      });
+      render(
+        <ThreadView
+          info={makeInfo({
+            archived: false,
+            status: 'auth_required',
+            agent: { id: 'auggie', name: 'Auggie', source: 'custom' },
+          })}
+        />,
+      );
+
+      await waitFor(() =>
+        expect(offerButton().getAttribute('data-auth-offer-kind')).toBe('terminal-sign-in'),
+      );
+      expect(authSurface().textContent).toContain('Log in with Auggie');
+
+      await userEvent.click(offerButton());
+      await waitFor(() =>
+        expect(launches).toEqual([
+          {
+            kind: 'command',
+            label: 'Log in with Auggie',
+            command: FIXTURE_TERMINAL_LAUNCH,
+            signInThreadId: 'thread-1',
+          },
+        ]),
+      );
+      expect(terminalAuthLaunch).toHaveBeenCalledWith('thread-1', 'auggie-login');
+      expect(retryThread).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('open-knowledge:terminal-launch', onLaunch);
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  });
+
+  test('a sign-in launch the server refuses becomes a toast, never a terminal', async () => {
+    const launches: unknown[] = [];
+    const onLaunch = (event: Event) => launches.push((event as CustomEvent).detail);
+    window.addEventListener('open-knowledge:terminal-launch', onLaunch);
+    Object.assign(window, {
+      okDesktop: {
+        config: { ptyAvailable: true },
+        terminal: { cliInstalledMap: () => Promise.resolve({}) },
+      },
+    });
+    terminalAuthLaunch.mockRejectedValueOnce(
+      new Error('this agent offers no terminal sign-in by that name'),
+    );
+    try {
+      model = makeModel({
+        turnActive: false,
+        items: [
+          authNotice({
+            authMethods: [
+              {
+                id: 'auggie-login',
+                name: 'Log in with Auggie',
+                kind: 'terminal',
+                terminalLaunchAvailable: true,
+              },
+            ],
+          }),
+        ],
+      });
+      render(
+        <ThreadView
+          info={makeInfo({
+            archived: false,
+            status: 'auth_required',
+            agent: { id: 'auggie', name: 'Auggie', source: 'custom' },
+          })}
+        />,
+      );
+
+      await waitFor(() =>
+        expect(offerButton().getAttribute('data-auth-offer-kind')).toBe('terminal-sign-in'),
+      );
+      await userEvent.click(offerButton());
+      await waitFor(() =>
+        expect(toastError).toHaveBeenCalledWith(
+          'Sign-in failed: this agent offers no terminal sign-in by that name',
+        ),
+      );
+      expect(launches).toEqual([]);
+      expect(retryThread).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('open-knowledge:terminal-launch', onLaunch);
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  });
+
+  test('a harness CLI sign-in names the chat that opened the terminal', async () => {
+    const launches: unknown[] = [];
+    const onLaunch = (event: Event) => launches.push((event as CustomEvent).detail);
+    window.addEventListener('open-knowledge:terminal-launch', onLaunch);
+    Object.assign(window, {
+      okDesktop: {
+        config: { ptyAvailable: true },
+        terminal: { cliInstalledMap: () => Promise.resolve({ claude: true }) },
+      },
+    });
+    try {
+      model = makeModel({ turnActive: false, items: [] });
+      render(
+        <ThreadView
+          info={makeInfo({
+            archived: false,
+            status: 'auth_required',
+            agent: { id: 'claude-acp', name: 'Claude Agent', source: 'registry' },
+          })}
+        />,
+      );
+      await waitFor(() =>
+        expect(offerButton().getAttribute('data-auth-offer-kind')).toBe('terminal-sign-in'),
+      );
+      await userEvent.click(offerButton());
+      expect(launches).toEqual([
+        { kind: 'cli', prompt: '', cli: 'claude', stage: false, signInThreadId: 'thread-1' },
+      ]);
+    } finally {
+      window.removeEventListener('open-knowledge:terminal-launch', onLaunch);
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  });
+
+  test('closing the sign-in terminal retries the chat and re-sends the message it held back', async () => {
+    retryThread.mockResolvedValueOnce(makeInfo({ status: 'ready' }));
+    const agent = { id: 'claude-acp', name: 'Claude Agent', source: 'registry' as const };
+    model = makeModel({
+      turnActive: false,
+      items: [
+        { kind: 'message', role: 'user', text: 'summarise the standup', messageId: 'u1' },
+        authNotice({ authMethods: undefined }),
+      ],
+    });
+    const view = render(
+      <ThreadView info={makeInfo({ archived: false, status: 'auth_required', agent })} />,
+    );
+    await screen.findByTestId('agent-thread-auth-status');
+
+    act(() => {
+      notifySignInTerminalExited('thread-1');
+    });
+    await waitFor(() => expect(retryThread).toHaveBeenCalledWith('thread-1'));
+    await waitFor(() =>
+      expect(prompt).toHaveBeenCalledWith('thread-1', 'summarise the standup', undefined),
+    );
+
+    view.rerender(<ThreadView info={makeInfo({ archived: false, status: 'ready', agent })} />);
+    expect(screen.queryByTestId('agent-thread-user-message')).toBeNull();
+  });
+
+  test('a sign-in terminal closing for another chat, or after recovery, retries nothing', async () => {
+    model = makeModel({
+      turnActive: false,
+      items: [
+        { kind: 'message', role: 'user', text: 'summarise the standup', messageId: 'u1' },
+        authNotice({ authMethods: undefined }),
+      ],
+    });
+    const view = render(
+      <ThreadView info={makeInfo({ archived: false, status: 'auth_required' })} />,
+    );
+    await screen.findByTestId('agent-thread-auth-status');
+    act(() => {
+      notifySignInTerminalExited('thread-2');
+    });
+    expect(retryThread).not.toHaveBeenCalled();
+
+    view.rerender(<ThreadView info={makeInfo({ archived: false, status: 'ready' })} />);
+    act(() => {
+      notifySignInTerminalExited('thread-1');
+    });
+    expect(retryThread).not.toHaveBeenCalled();
+    expect(prompt).not.toHaveBeenCalled();
+  });
+
+  test('Already signed in? Retry re-sends the held message once the agent is ready', async () => {
+    retryThread.mockResolvedValueOnce(makeInfo({ status: 'ready' }));
+    model = makeModel({
+      turnActive: false,
+      items: [
+        { kind: 'message', role: 'user', text: 'summarise the standup', messageId: 'u1' },
+        authNotice({ authMethods: undefined }),
+      ],
+    });
+    render(<ThreadView info={makeInfo({ archived: false, status: 'auth_required' })} />);
+
+    await userEvent.click(within(authSurface()).getByTestId('agent-thread-retry'));
+    await waitFor(() =>
+      expect(prompt).toHaveBeenCalledWith('thread-1', 'summarise the standup', undefined),
+    );
+  });
+
+  test('a retry that leaves the agent signed out re-sends nothing', async () => {
+    retryThread.mockResolvedValueOnce(makeInfo({ status: 'auth_required' }));
+    model = makeModel({
+      turnActive: false,
+      items: [
+        { kind: 'message', role: 'user', text: 'summarise the standup', messageId: 'u1' },
+        authNotice({ authMethods: undefined }),
+      ],
+    });
+    render(<ThreadView info={makeInfo({ archived: false, status: 'auth_required' })} />);
+
+    await userEvent.click(within(authSurface()).getByTestId('agent-thread-retry'));
+    await waitFor(() => expect(retryThread).toHaveBeenCalledWith('thread-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(prompt).not.toHaveBeenCalled();
+  });
+
+  test('a refused resume shows New chat once when the sign-in notice already offers it', () => {
+    model = makeModel({ turnActive: false, items: [authNotice({ authMethods: undefined })] });
+    render(<ThreadView info={makeInfo({ archived: true, resumable: false, status: 'exited' })} />);
+    expect(screen.queryByTestId('agent-thread-resume-failed')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'New chat with Claude' })).toHaveLength(1);
+  });
+
+  test('a refused resume without a sign-in notice keeps the banner as the way out', () => {
+    model = makeModel({ turnActive: false, items: [] });
+    render(<ThreadView info={makeInfo({ archived: true, resumable: false, status: 'exited' })} />);
+    expect(screen.getByTestId('agent-thread-resume-failed')).toBeDefined();
+  });
+
   test('a clickable sign-in method still wins over the terminal fallback', async () => {
     Object.assign(window, {
       okDesktop: {
@@ -5113,6 +5515,180 @@ describe('ThreadView start progress', () => {
     },
   );
 
+  test('a crash after start shows a plain headline and summary, with the stderr behind Show details', async () => {
+    model = makeModel({
+      turnActive: false,
+      items: [
+        {
+          kind: 'notice',
+          tone: 'error',
+          attempts: 1,
+          text: 'agent exited (127)',
+          failure: {
+            reason: 'exited',
+            exit: { exitCode: 127, signal: null, cause: 'command-not-found' },
+            machineDetail:
+              'npm warn deprecated node-domexception@1.0.0\nsh: cline: command not found',
+          },
+        },
+      ],
+    });
+    render(<ThreadView info={makeInfo({ archived: false, status: 'exited' })} />);
+
+    const card = screen.getByTestId('agent-thread-notice');
+    expect(card.textContent).toContain('Claude stopped unexpectedly.');
+    expect(card.textContent).toContain('A command the agent needs was not found (exit code 127).');
+    expect(card.textContent).not.toContain('agent exited (127)');
+    expect(card.getAttribute('aria-live')).toBeNull();
+    const newChat = screen.getByTestId('agent-thread-auth-action');
+    expect(newChat.getAttribute('data-auth-offer-kind')).toBe('new-chat');
+    expect(newChat.textContent).toContain('New chat with Claude');
+    expect(screen.queryByTestId('agent-thread-notice-details')).toBeNull();
+    await userEvent.click(screen.getByTestId('agent-thread-notice-details-toggle'));
+    expect(screen.getByTestId('agent-thread-notice-details').textContent).toContain(
+      'sh: cline: command not found',
+    );
+  });
+
+  const crashNotice = (exit: ThreadExitDiagnosis, machineDetail: string): RenderedItem => ({
+    kind: 'notice',
+    tone: 'error',
+    attempts: 1,
+    text: 'agent exited',
+    failure: { reason: 'exited', exit, machineDetail },
+  });
+
+  test('a crash is announced through a region mounted before it, and opening details adds nothing to it', async () => {
+    model = makeModel({ turnActive: false, items: [] });
+    const { rerender } = render(
+      <ThreadView info={makeInfo({ archived: false, status: 'ready' })} />,
+    );
+    const region = screen.getByTestId('agent-thread-crash-status');
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.textContent).toBe('');
+
+    model = makeModel({
+      turnActive: false,
+      items: [
+        crashNotice(
+          { exitCode: 127, signal: null, cause: 'command-not-found' },
+          'sh: cline: command not found',
+        ),
+      ],
+    });
+    rerender(<ThreadView info={makeInfo({ archived: false, status: 'exited' })} />);
+
+    expect(screen.getByTestId('agent-thread-crash-status')).toBe(region);
+    expect(region.textContent).toMatch(
+      /^Claude stopped unexpectedly\. A command the agent needs was not found \(exit code 127\)\./,
+    );
+    const announced = region.textContent;
+    await userEvent.click(screen.getByTestId('agent-thread-notice-details-toggle'));
+    expect(screen.getByTestId('agent-thread-notice-details').closest('[aria-live]')).toBeNull();
+    expect(region.textContent).toBe(announced);
+  });
+
+  test('a crash that ends a start is announced once, by the start region', () => {
+    model = makeModel({ turnActive: false, items: [] });
+    const { rerender } = render(
+      <ThreadView info={makeInfo({ archived: false, status: 'spawning' })} />,
+    );
+    model = makeModel({
+      turnActive: false,
+      items: [
+        crashNotice(
+          { exitCode: 127, signal: null, cause: 'command-not-found' },
+          'sh: cline: command not found',
+        ),
+      ],
+    });
+    rerender(<ThreadView info={makeInfo({ archived: false, status: 'exited' })} />);
+
+    expect(screen.getByTestId('agent-thread-start-status').textContent).toBe(
+      "Claude couldn't start",
+    );
+    expect(screen.getByTestId('agent-thread-crash-status').textContent).toBe('');
+  });
+
+  test('a crash while waiting for sign-in leaves one card with an action and one announcement', () => {
+    const signIn: RenderedItem = {
+      kind: 'notice',
+      tone: 'info',
+      attempts: 1,
+      text: 'sign in required',
+      failure: { reason: 'auth-required', authMethods: [{ id: 'login', name: 'Login' }] },
+    };
+    model = makeModel({ turnActive: false, items: [signIn] });
+    const { rerender } = render(
+      <ThreadView info={makeInfo({ archived: false, status: 'auth_required' })} />,
+    );
+    model = makeModel({
+      turnActive: false,
+      items: [
+        signIn,
+        crashNotice(
+          { exitCode: 127, signal: null, cause: 'command-not-found' },
+          'sh: cline: command not found',
+        ),
+      ],
+    });
+    rerender(<ThreadView info={makeInfo({ archived: false, status: 'exited' })} />);
+
+    const [signInCard, crashCard] = screen.getAllByTestId('agent-thread-notice');
+    expect(signInCard?.textContent).toContain('Claude needed you to sign in.');
+    expect(crashCard?.textContent).toContain('Claude stopped unexpectedly.');
+    const actions = screen.getAllByTestId('agent-thread-auth-action');
+    expect(actions).toHaveLength(1);
+    expect(crashCard?.contains(actions[0] ?? null)).toBe(true);
+    expect(actions[0]?.getAttribute('data-auth-offer-kind')).toBe('new-chat');
+    const announcements = [
+      screen.getByTestId('agent-thread-start-status').textContent,
+      screen.getByTestId('agent-thread-crash-status').textContent,
+    ].filter((text) => text !== '');
+    expect(announcements).toHaveLength(1);
+  });
+
+  test('a crash in a closed chat is not announced again', () => {
+    model = makeModel({
+      turnActive: false,
+      items: [crashNotice({ exitCode: 1, signal: null, cause: 'unknown' }, 'boom')],
+    });
+    render(<ThreadView info={makeInfo({ archived: true, status: 'exited' })} />);
+    expect(screen.getByTestId('agent-thread-notice')).toBeDefined();
+    expect(screen.getByTestId('agent-thread-crash-status').textContent).toBe('');
+  });
+
+  test('the inline error line on a crash comes from the recent stderr the cause was read from', () => {
+    const recent = Array.from(
+      { length: THREAD_EXIT_STDERR_WINDOW_LINES },
+      (_, index) => `progress line ${index}`,
+    ).join('\n');
+    const outOfMemory: ThreadExitDiagnosis = {
+      exitCode: 134,
+      signal: null,
+      cause: 'out-of-memory',
+    };
+    model = makeModel({
+      turnActive: false,
+      items: [crashNotice(outOfMemory, `Error: retrying connection\n${recent}`)],
+    });
+    const { unmount } = render(
+      <ThreadView info={makeInfo({ archived: false, status: 'exited' })} />,
+    );
+    expect(screen.queryByTestId('agent-thread-notice-root-cause')).toBeNull();
+    unmount();
+
+    model = makeModel({
+      turnActive: false,
+      items: [crashNotice(outOfMemory, `${recent}\nError: listen EADDRINUSE`)],
+    });
+    render(<ThreadView info={makeInfo({ archived: false, status: 'exited' })} />);
+    expect(screen.getByTestId('agent-thread-notice-root-cause').textContent).toBe(
+      'Error: listen EADDRINUSE',
+    );
+  });
+
   test('a start that had already succeeded when the agent exited announces no failure', () => {
     model = makeModel({ turnActive: false, items: [] });
     const { rerender } = render(
@@ -5266,6 +5842,63 @@ describe('ThreadView attachment budget and clear fence (PRD-8453)', () => {
   const smallPng = (name: string) =>
     new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: 'image/png' });
 
+  test('an image dropped on an agent that takes none is refused and logged', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    model = makeModel({ items: [], turnActive: false });
+    render(
+      <ThreadView info={makeInfo({ status: 'ready', promptCapabilities: { image: false } })} />,
+    );
+
+    fireDrop([smallPng('a.png')]);
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Claude doesn't accept image attachments."),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      '[acp-attachment] refused',
+      expect.objectContaining({ surface: 'agent-chat', reason: 'images-not-accepted' }),
+    );
+  });
+
+  test('a photo too big to send whole attaches as a copy shrunk to fit', async () => {
+    stubImageCanvas({ width: 4000, height: 3000 });
+    onTestFinished(() => vi.unstubAllGlobals());
+    model = makeModel({ items: [], turnActive: false });
+    render(
+      <ThreadView info={makeInfo({ status: 'ready', promptCapabilities: { image: true } })} />,
+    );
+
+    fireDrop([
+      new File([new Uint8Array(MAX_TOTAL_ATTACHMENT_BYTES * 3)], 'photo.png', {
+        type: 'image/png',
+      }),
+    ]);
+
+    await waitFor(() =>
+      expect(screen.queryAllByTestId('agent-thread-pending-image-preview')).toHaveLength(1),
+    );
+    expect(screen.getByTestId('agent-thread-drop-notice').textContent).toBe('');
+  });
+
+  test('a second photo too big to send whole is shrunk into what the first left of the budget', async () => {
+    stubImageCanvas({ width: 4000, height: 3000, bytesPerPixel: 0.15 });
+    onTestFinished(() => vi.unstubAllGlobals());
+    model = makeModel({ items: [], turnActive: false });
+    render(
+      <ThreadView info={makeInfo({ status: 'ready', promptCapabilities: { image: true } })} />,
+    );
+    const photo = (name: string) =>
+      new File([new Uint8Array(MAX_TOTAL_ATTACHMENT_BYTES * 3)], name, { type: 'image/png' });
+
+    fireDrop([photo('one.png'), photo('two.png')]);
+
+    await waitFor(() =>
+      expect(screen.queryAllByTestId('agent-thread-pending-image-preview')).toHaveLength(2),
+    );
+    expect(screen.getByTestId('agent-thread-drop-notice').textContent).toBe('');
+  });
+
   test('interleaved drops cannot stack attachments past the aggregate byte budget', async () => {
     model = makeModel({ items: [], turnActive: false });
     render(
@@ -5280,7 +5913,7 @@ describe('ThreadView attachment budget and clear fence (PRD-8453)', () => {
     expect(screen.queryAllByTestId('agent-thread-pending-image-preview')).toHaveLength(1);
   });
 
-  test('a mixed-cause drop reports both the skip and the budget refusal in one notice', async () => {
+  test('a drop past the budget attaches what fits, text files included, and names only the budget refusal', async () => {
     model = makeModel({ items: [], turnActive: false });
     render(
       <ThreadView info={makeInfo({ status: 'ready', promptCapabilities: { image: true } })} />,
@@ -5294,7 +5927,8 @@ describe('ThreadView attachment budget and clear fence (PRD-8453)', () => {
 
     const notice = await screen.findByTestId('agent-thread-drop-notice');
     await waitFor(() => expect(notice.textContent).toContain("can't total more than"));
-    expect(notice.textContent).toContain("can't attach files by path");
+    expect(notice.textContent).toContain('Skipped 1 file');
+    expect(screen.getAllByTestId('agent-thread-pending-image-remove')).toHaveLength(2);
   });
 
   test('Enter during an in-flight read is held — the attachment survives to ride the send once it settles', async () => {
@@ -5669,4 +6303,146 @@ describe('ThreadView hands the composer what to list first', () => {
       activeDocName = null;
     }
   });
+});
+
+describe('ThreadView reporting a problem with the chat', () => {
+  const withSettings = () =>
+    makeInfo({
+      status: 'ready',
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'opus',
+          options: [
+            { value: 'opus', name: 'Opus' },
+            { value: 'sonnet', name: 'Sonnet' },
+          ],
+        },
+      ],
+    });
+  const installReportBridge = () =>
+    Object.assign(window, {
+      okDesktop: {
+        bugReport: {
+          crashDumpAvailability: () => Promise.resolve({ available: false }),
+          captureScreenshot: () => Promise.resolve(null),
+        },
+      },
+    });
+
+  test('the settings trigger keeps a muted label and chevron when it only opens the report', () => {
+    installReportBridge();
+    try {
+      model = makeModel({ items: [], turnActive: false });
+      render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+      const trigger = screen.getByTestId('agent-thread-settings');
+      const label = within(trigger).getByText('Settings');
+      const chevron = trigger.querySelector('svg');
+
+      for (const part of [label, chevron]) {
+        expectVisualClassTokens(part?.getAttribute('class'), ['text-muted-foreground']);
+        expectVisualClassTokensAbsent(part?.getAttribute('class'), ['text-muted-foreground/50']);
+      }
+      expect(trigger.hasAttribute('aria-disabled')).toBe(false);
+    } finally {
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  });
+
+  test('the settings trigger dims fully when it opens nothing and not at all when it opens settings', () => {
+    model = makeModel({ items: [], turnActive: false });
+    const view = render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+    const disabled = screen.getByTestId('agent-thread-settings');
+    for (const part of [within(disabled).getByText('Settings'), disabled.querySelector('svg')]) {
+      expectVisualClassTokens(part?.getAttribute('class'), ['text-muted-foreground/50']);
+    }
+    expect(disabled.getAttribute('aria-disabled')).toBe('true');
+
+    view.rerender(<ThreadView info={withSettings()} />);
+    const normal = screen.getByTestId('agent-thread-settings');
+    expectVisualClassTokensAbsent(normal.querySelector('svg')?.getAttribute('class'), [
+      'text-muted-foreground',
+      'text-muted-foreground/50',
+    ]);
+    expect(normal.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  test('the settings menu offers no report where reports cannot be sent', async () => {
+    model = makeModel({ items: [], turnActive: false });
+    render(<ThreadView info={withSettings()} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Agent settings/ }));
+    await screen.findByRole('menu');
+    expect(screen.queryByTestId('agent-thread-report-problem')).toBeNull();
+  });
+
+  test('a chat whose agent offers settings lists the report below them', async () => {
+    installReportBridge();
+    try {
+      model = makeModel({ items: [], turnActive: false });
+      render(<ThreadView info={withSettings()} />);
+      await userEvent.click(screen.getByRole('button', { name: /^Agent settings/ }));
+      const item = await screen.findByTestId('agent-thread-report-problem');
+      expect(item.textContent).toBe('Report a problem with this chat…');
+    } finally {
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  });
+
+  test('a chat with no settings to adjust still opens a report that carries it', async () => {
+    installReportBridge();
+    try {
+      model = makeModel({ items: [], turnActive: false });
+      render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+      await userEvent.click(screen.getByRole('button', { name: /^Agent settings/ }));
+      await userEvent.click(await screen.findByTestId('agent-thread-report-problem'));
+      const chat = await screen.findByRole(
+        'checkbox',
+        { name: 'This conversation' },
+        { timeout: 15_000 },
+      );
+      expect(chat.getAttribute('aria-checked')).toBe('true');
+    } finally {
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  }, 30_000);
+
+  test('the screenshot waits for the settings menu to close and marks no row', async () => {
+    const stopPointerTracking = installPointerPositionTracker();
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { clientX: 240, clientY: 160, bubbles: true }),
+    );
+    let captures = 0;
+    let markersAtCapture = -1;
+    let menuAtCapture: boolean | null = null;
+    Object.assign(window, {
+      okDesktop: {
+        bugReport: {
+          crashDumpAvailability: () => Promise.resolve({ available: false }),
+          captureScreenshot: () => {
+            captures += 1;
+            markersAtCapture = document.querySelectorAll('.ok-pointer-marker').length;
+            menuAtCapture = screen.queryByTestId('agent-thread-settings-popover') !== null;
+            return Promise.resolve(null);
+          },
+        },
+      },
+    });
+    try {
+      model = makeModel({ items: [], turnActive: false });
+      render(<ThreadView info={makeInfo({ status: 'ready' })} />);
+      await userEvent.click(screen.getByRole('button', { name: /^Agent settings/ }));
+      await userEvent.click(await screen.findByTestId('agent-thread-report-problem'));
+      await screen.findByRole('checkbox', { name: 'This conversation' }, { timeout: 15_000 });
+
+      expect(captures).toBe(1);
+      expect(markersAtCapture).toBe(0);
+      expect(menuAtCapture).toBe(false);
+    } finally {
+      stopPointerTracking();
+      Reflect.deleteProperty(window, 'okDesktop');
+    }
+  }, 30_000);
 });

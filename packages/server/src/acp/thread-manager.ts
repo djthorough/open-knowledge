@@ -16,6 +16,7 @@ import {
   type ContentBlock,
   type InitializeResponse,
   type McpServer,
+  type McpServerStdio,
   ndJsonStream,
   type PermissionOption,
   PROTOCOL_VERSION,
@@ -42,13 +43,14 @@ import {
 } from '@inkeep/open-knowledge-core';
 import type {
   AttachmentPart,
+  BrowserUnavailableReason,
   PiBridgeThreadState,
   PiBridgeWriteAction,
   PiTrustWriteAction,
   QueuedMessage,
   SteerMessage,
   ThreadAgentInfo,
-  ThreadAuthMethod,
+  ThreadAuthTerminalLaunch,
   ThreadChatGrant,
   ThreadEvent,
   ThreadFailureDetail,
@@ -57,6 +59,7 @@ import type {
   ThreadStatus,
 } from '@inkeep/open-knowledge-core/acp/thread-protocol';
 import { THREAD_REOPEN_OP_TIMEOUT_MS } from '@inkeep/open-knowledge-core/acp/thread-protocol';
+import { asRecord } from '@inkeep/open-knowledge-core/acp/tool-call-input';
 import { sessionWriterId, toBroadcasterKey } from '../agent-id.ts';
 import type { AgentPresenceBroadcaster } from '../agent-presence.ts';
 import { observeReadiness } from '../agent-registry-gate.ts';
@@ -83,11 +86,23 @@ import { RUNTIME_VERSION } from '../version-constants.ts';
 import { isWithin } from './archive.ts';
 import { buildPromptBlocks } from './attachment-blocks.ts';
 import {
+  agentBrowserMcpServer,
+  agentGetsBrowser,
+  type BrowserCallEvidence,
+  browserNpxRunnable,
+  identifyBrowserCall,
+  needsReportedToolCall,
+  prepareAgentBrowserFolders,
+  removeAgentBrowserFolders,
+  resolveBrowserNpx,
+} from './browser-mcp.ts';
+import {
   ACQUISITION_DETAIL_MAX_CHARS,
   createDiagnosticStderrCapture,
   redactDiagnostic,
 } from './diagnostics.ts';
 import { boundSessionUpdateForLog, coalesceChunkInto } from './event-log-bounds.ts';
+import { exitFailureDetail } from './exit-diagnosis.ts';
 import {
   AgentLaunchError,
   agentSpawnPath,
@@ -137,7 +152,7 @@ import {
   applyLaunchContextWindow,
   launchContextMechanism,
 } from './model-discovery/launch-context.ts';
-import type { AcpPermissionStore } from './permissions.ts';
+import { type AcpPermissionStore, offeredPermissionOptions } from './permissions.ts';
 import { PROJECT_SKILL_ENTRY, stageProjectSkill } from './project-skill-staging.ts';
 import { readOnlyShellCommand } from './read-only-shell.ts';
 import {
@@ -147,8 +162,18 @@ import {
   loadCustomAgents,
   registryPlatformKey,
 } from './registry.ts';
+import {
+  type TerminalAuthBase,
+  terminalAuthBaseFor,
+  terminalAuthLaunch,
+  threadAuthMethods,
+} from './terminal-auth.ts';
 import { AcpTerminalSet } from './terminals.ts';
-import { type PersistedThreadMeta, ThreadPersistenceStore } from './thread-persistence.ts';
+import {
+  acpThreadStoreRoots,
+  type PersistedThreadMeta,
+  ThreadPersistenceStore,
+} from './thread-persistence.ts';
 import { clampThreadTitle, deriveThreadTitle } from './thread-title.ts';
 
 export const MAX_ACP_THREADS = 8;
@@ -171,6 +196,11 @@ const DEFAULT_STEER_STALL_MS = 10_000;
 const DEFAULT_TURN_STALL_MS = 3 * 60 * 1000;
 const DEFAULT_AUTHENTICATE_TIMEOUT_MS = 5 * 60 * 1000;
 const STDERR_TAIL_LINES = 40;
+const CRASH_REPORT_STATUSES: ReadonlySet<ThreadStatus> = new Set([
+  'ready',
+  'auth_required',
+  'authenticating',
+]);
 const SIGN_IN_OUTPUT_LINES = 6;
 const RESUME_REPLAY_QUIESCENCE_MS = 300;
 const RESUME_REPLAY_MAX_WAIT_MS = 3_000;
@@ -249,7 +279,8 @@ export class ThreadOpError extends Error {
     | 'spawn-failed'
     | 'install-failed'
     | 'not-ready'
-    | 'resume-unsupported';
+    | 'resume-unsupported'
+    | 'agent-exited';
   constructor(code: ThreadOpError['code'], message: string) {
     super(message);
     this.name = 'ThreadOpError';
@@ -305,6 +336,8 @@ interface ThreadRecord {
   child: ChildProcess | null;
   conn: ClientConnection | null;
   lastInit: InitializeResponse | null;
+  terminalAuthBase: TerminalAuthBase | null;
+  agentLaunchPath?: string;
   sessionId: string | null;
   agentSessionId: string;
   events: ThreadEvent[];
@@ -319,8 +352,16 @@ interface ThreadRecord {
   subscribers: Set<Subscriber>;
   pendingPermissions: Map<
     string,
-    { resolve: (response: RequestPermissionResponse) => void; timer: ReturnType<typeof setTimeout> }
+    {
+      resolve: (response: RequestPermissionResponse) => void;
+      timer: ReturnType<typeof setTimeout>;
+      offeredOptionIds: ReadonlySet<string>;
+    }
   >;
+  reportedToolCalls: Map<string, BrowserCallEvidence>;
+  toolCallReportWaiters: Map<string, Array<() => void>>;
+  browserInjected: boolean;
+  browserNotice: BrowserUnavailableReason | null;
   pendingRuntimeConsent: Map<string, PendingConsent>;
   pendingPiBridgeConsent: Map<string, PendingConsent>;
   piBridgeDeclined: boolean;
@@ -414,6 +455,7 @@ export interface AcpThreadManagerOptions {
   };
   resolveLoginShellPath?: () => Promise<string | null>;
   projectSkillSourceDir?: string | null;
+  terminalAuthAvailable?: boolean;
   log: PinoLogger;
   maxThreads?: number;
   idleReapMs?: number;
@@ -423,6 +465,8 @@ export interface AcpThreadManagerOptions {
   unwatchedTurnKillMs?: number;
   turnStallMs?: number;
   autoApproveOkTools?: () => boolean;
+  agentBrowserTools?: () => boolean;
+  resolveBrowserNpx?: typeof resolveBrowserNpx;
 }
 
 export function buildOkMcpStdioCommand(
@@ -487,9 +531,10 @@ export class AcpThreadManager {
     this.unwatchedTurnCancelMs = opts.unwatchedTurnCancelMs ?? DEFAULT_UNWATCHED_TURN_CANCEL_MS;
     this.unwatchedTurnKillMs = opts.unwatchedTurnKillMs ?? DEFAULT_UNWATCHED_TURN_KILL_MS;
     this.turnStallMs = opts.turnStallMs ?? DEFAULT_TURN_STALL_MS;
+    const [primaryDir, legacyDir = null] = acpThreadStoreRoots(opts.globalDir, opts.localDir);
     this.persistence = new ThreadPersistenceStore({
-      primaryDir: opts.globalDir ?? opts.localDir,
-      legacyDir: opts.globalDir !== null ? opts.localDir : null,
+      primaryDir,
+      legacyDir,
       cwd: opts.globalDir !== null ? opts.contentDir : null,
       log: opts.log,
     });
@@ -649,6 +694,7 @@ export class AcpThreadManager {
       child: null,
       conn: null,
       lastInit: null,
+      terminalAuthBase: null,
       sessionId: null,
       agentSessionId: `acp-${threadId}`,
       events: [],
@@ -662,6 +708,10 @@ export class AcpThreadManager {
       lastSuppressedAt: 0,
       subscribers: new Set(),
       pendingPermissions: new Map(),
+      reportedToolCalls: new Map(),
+      toolCallReportWaiters: new Map(),
+      browserInjected: false,
+      browserNotice: null,
       pendingRuntimeConsent: new Map(),
       pendingPiBridgeConsent: new Map(),
       piBridgeDeclined: false,
@@ -826,6 +876,8 @@ export class AcpThreadManager {
       loginShellPath,
     });
 
+    record.terminalAuthBase = terminalAuthBaseFor(launch);
+    record.agentLaunchPath = envPath(launch.env);
     launch = applyLaunchContextWindow(
       launch,
       record.agentRef.id,
@@ -908,6 +960,7 @@ export class AcpThreadManager {
     });
     child.on('exit', (code, signal) => {
       if (record.child !== child) return;
+      const reportsCrash = CRASH_REPORT_STATUSES.has(record.info.status);
       record.child = null;
       this.failPendingPermissions(record);
       this.failPendingConsents(record);
@@ -937,7 +990,12 @@ export class AcpThreadManager {
             },
             '[acp-threads] agent exited unexpectedly',
           );
-          this.emitStatus(record, 'exited', joinMachineDetail({ primary: headline, tail }));
+          this.emitStatus(
+            record,
+            'exited',
+            headline,
+            reportsCrash ? exitFailureDetail({ exitCode: code, signal, tail }) : undefined,
+          );
           this.failPendingPermissions(record);
         })
         .catch((err: unknown) => {
@@ -958,7 +1016,12 @@ export class AcpThreadManager {
 
     const conn = acpClient({ name: 'open-knowledge' })
       .onRequest(acpMethods.client.session.requestPermission, (ctx) =>
-        this.handlePermissionRequest(record, ctx.params.toolCall, ctx.params.options),
+        this.handlePermissionRequest(
+          record,
+          ctx.params.toolCall,
+          ctx.params.options,
+          ctx.params._meta,
+        ),
       )
       .onRequest(acpMethods.client.fs.readTextFile, async (ctx) => {
         this.touchTurnActivity(record);
@@ -1059,6 +1122,7 @@ export class AcpThreadManager {
         clientCapabilities: {
           fs: { readTextFile: true, writeTextFile: true },
           terminal: true,
+          ...(this.opts.terminalAuthAvailable === true ? { auth: { terminal: true } } : {}),
           session: { configOptions: { boolean: {} } },
         },
       });
@@ -1534,8 +1598,13 @@ export class AcpThreadManager {
     record: ThreadRecord,
     init: InitializeResponse,
     consentBudgetMs: number = CONSENT_TIMEOUT_MS,
-  ): Promise<{ servers: McpServer[]; hostedMarker: OkMcpHostedMarker }> {
+  ): Promise<{
+    servers: McpServer[];
+    hostedMarker: OkMcpHostedMarker;
+    browserUnavailable: BrowserUnavailableReason | null;
+  }> {
     const servers: McpServer[] = [];
+    let browserUnavailable: BrowserUnavailableReason | null = null;
     let hostedMarker: OkMcpHostedMarker;
     if (isPiBridgeAgent(record.agentRef)) {
       const outcome = await this.settlePiBridge(record, consentBudgetMs);
@@ -1573,6 +1642,23 @@ export class AcpThreadManager {
         }
       }
     }
+    record.browserInjected = false;
+    if (this.opts.agentBrowserTools?.() === true) {
+      if (agentGetsBrowser(record.agentRef)) {
+        const browser = await this.agentBrowserServer(record);
+        if (typeof browser === 'string') {
+          browserUnavailable = browser;
+        } else {
+          servers.push(browser);
+          record.browserInjected = true;
+        }
+      } else {
+        this.opts.log.info(
+          { threadId: record.info.threadId, agentId: record.agentRef.id },
+          '[acp-threads] browser tools are on, but only Claude Code and Codex chats get the browser',
+        );
+      }
+    }
     if (hostedMarker === 'none') {
       this.opts.log.warn(
         { threadId: record.info.threadId, agentId: record.agentRef.id },
@@ -1584,7 +1670,79 @@ export class AcpThreadManager {
         '[acp-threads] OK MCP injection outcome',
       );
     }
-    return { servers, hostedMarker };
+    return { servers, hostedMarker, browserUnavailable };
+  }
+
+  private noteBrowserUnavailable(
+    record: ThreadRecord,
+    reason: BrowserUnavailableReason | null,
+  ): void {
+    if (record.browserInjected) {
+      record.browserNotice = null;
+      return;
+    }
+    if (reason === null || reason === record.browserNotice) return;
+    record.browserNotice = reason;
+    this.appendEvent(record, { kind: 'browser_unavailable', reason, ts: Date.now() });
+  }
+
+  private async agentBrowserServer(
+    record: ThreadRecord,
+  ): Promise<McpServerStdio | BrowserUnavailableReason> {
+    const context = { threadId: record.info.threadId, agentId: record.agentRef.id };
+    const browserRoot = this.opts.globalDir;
+    if (browserRoot === null) {
+      this.opts.log.warn(
+        context,
+        '[acp-threads] browser tools are on but there is no per-user OpenKnowledge folder to start the browser from — the chat starts without a browser',
+      );
+      return 'failed';
+    }
+    const loginShellPath = await this.resolveLoginShellPath().catch(() => null);
+    const rejectedNpx: string[] = [];
+    const npx = (this.opts.resolveBrowserNpx ?? resolveBrowserNpx)(
+      [record.agentLaunchPath, loginShellPath, agentSpawnPath()],
+      undefined,
+      (candidate) => {
+        const insideProject =
+          isWithin(this.opts.contentDir, candidate) || isWithin(record.cwd, candidate);
+        if (!insideProject && browserNpxRunnable(candidate)) return true;
+        rejectedNpx.push(candidate);
+        return false;
+      },
+    );
+    if (npx === null) {
+      this.opts.log.warn(
+        { ...context, rejectedNpx },
+        '[acp-threads] browser tools are on but no usable npx was found — the chat starts without a browser',
+      );
+      return 'no-node';
+    }
+    let server: McpServerStdio | null;
+    try {
+      server = agentBrowserMcpServer({
+        npx,
+        folders: await prepareAgentBrowserFolders(browserRoot, record.info.threadId),
+      });
+    } catch (err) {
+      this.opts.log.warn(
+        { ...context, err },
+        '[acp-threads] preparing the browser failed — the chat starts without a browser',
+      );
+      return 'failed';
+    }
+    if (server === null) {
+      this.opts.log.warn(
+        { ...context, npx: npx.npx },
+        '[acp-threads] the npx found cannot start the browser — the chat starts without a browser',
+      );
+      return 'no-node';
+    }
+    this.opts.log.info(
+      { ...context, command: server.command, npx: npx.npx },
+      '[acp-threads] browser MCP injected',
+    );
+    return server;
   }
 
   private async harnessAlreadyHasOkMcp(
@@ -1897,7 +2055,12 @@ export class AcpThreadManager {
     consentBudgetMs: number = CONSENT_TIMEOUT_MS,
   ): Promise<boolean | 'auth-required'> {
     record.info.availableCommands = null;
-    const { servers: mcpServers } = await this.buildMcpServers(record, init, consentBudgetMs);
+    const { servers: mcpServers, browserUnavailable } = await this.buildMcpServers(
+      record,
+      init,
+      consentBudgetMs,
+    );
+    this.noteBrowserUnavailable(record, browserUnavailable);
     try {
       const session = await conn.agent.request(acpMethods.agent.session.new, {
         cwd: record.cwd,
@@ -1924,7 +2087,7 @@ export class AcpThreadManager {
           reason: 'auth-required',
           agentMessage: agentErrorMessage(err),
           machineDetail: authMachineDetail(err, record),
-          authMethods: threadAuthMethods(init.authMethods),
+          authMethods: threadAuthMethods(init.authMethods, record.terminalAuthBase),
         });
       } else {
         const tail = await stderrTailDetail(record);
@@ -2019,11 +2182,12 @@ export class AcpThreadManager {
         t.info.resumable = resumableFromCapabilities(init);
         t.confirmedContextWindow = appliedContextWindow(t);
         t.info.contextWindow = t.confirmedContextWindow;
-        const { servers: mcpServers } = await this.buildMcpServers(
+        const { servers: mcpServers, browserUnavailable } = await this.buildMcpServers(
           t,
           init,
           BLOCKING_CONSENT_TIMEOUT_MS,
         );
+        this.noteBrowserUnavailable(t, browserUnavailable);
         const caps = init.agentCapabilities;
         const viaResume = caps?.sessionCapabilities?.resume != null;
         let response: { modes?: unknown; configOptions?: unknown };
@@ -2231,6 +2395,15 @@ export class AcpThreadManager {
     }
   }
 
+  terminalAuthLaunch(threadId: string, methodId: string): ThreadAuthTerminalLaunch {
+    const t = this.mustGet(threadId);
+    const launch = terminalAuthLaunch(t.lastInit?.authMethods, t.terminalAuthBase, methodId);
+    if (launch === null) {
+      throw new ThreadOpError('not-ready', 'this agent offers no terminal sign-in by that name');
+    }
+    return launch;
+  }
+
   async authenticateThread(threadId: string, methodId: string): Promise<ThreadInfo> {
     if (this.destroyed) throw new ThreadOpError('capacity', 'server is shutting down');
     const t = this.mustGet(threadId);
@@ -2262,16 +2435,18 @@ export class AcpThreadManager {
       try {
         await this.requestAuthenticate(conn, methodId);
       } catch (err) {
+        await t.drainStderr?.();
         if (t.conn !== conn) throw threadRestartedDuringSignIn();
         const timedOut = err instanceof AuthenticateTimeoutError;
         const message = timedOut
           ? `the sign-in didn't complete in time — try again`
           : agentErrorMessage(err);
+        if (t.child === null) throw new ThreadOpError('agent-exited', message);
         this.emitStatus(t, 'auth_required', `sign-in failed: ${message}`, {
           reason: 'auth-required',
           agentMessage: message,
           machineDetail: authMachineDetail(err, t),
-          authMethods: threadAuthMethods(init.authMethods),
+          authMethods: threadAuthMethods(init.authMethods, t.terminalAuthBase),
         });
         throw new ThreadOpError('not-ready', message);
       }
@@ -2299,7 +2474,7 @@ export class AcpThreadManager {
               reason: 'auth-required',
               agentMessage: agentErrorMessage(err),
               machineDetail: authMachineDetail(err, t),
-              authMethods: threadAuthMethods(init.authMethods),
+              authMethods: threadAuthMethods(init.authMethods, t.terminalAuthBase),
             });
           }
           throw err;
@@ -2774,7 +2949,7 @@ export class AcpThreadManager {
             reason: 'auth-required',
             agentMessage: agentErrorMessage(err),
             machineDetail: authMachineDetail(err, t),
-            authMethods: threadAuthMethods(t.lastInit?.authMethods),
+            authMethods: threadAuthMethods(t.lastInit?.authMethods, t.terminalAuthBase),
           });
           return;
         }
@@ -2898,42 +3073,74 @@ export class AcpThreadManager {
   ): Promise<void> {
     const sessionId = record.sessionId;
     if (sessionId === null) return;
-    const isModel = (id: string): boolean =>
-      (record.info.configOptions ?? []).find((o) => o.id === id)?.category === 'model';
-    const ids = Object.keys(config).sort((a, b) => Number(isModel(b)) - Number(isModel(a)));
     let applied = false;
-    const rejected: string[] = [];
-    for (const configId of ids) {
-      const value = config[configId];
-      if (value === undefined) continue;
-      const option = (record.info.configOptions ?? []).find((o) => o.id === configId);
-      if (option === undefined) continue;
-      if (!sessionStateUnknown && option.currentValue === value) continue;
-      if (!initialConfigValueValid(option, value)) continue;
-      const request: SetSessionConfigOptionRequest =
-        typeof value === 'boolean'
-          ? { sessionId, configId, type: 'boolean', value }
-          : { sessionId, configId, value };
-      try {
-        const response: SetSessionConfigOptionResponse = await conn.agent.request(
-          acpMethods.agent.session.setConfigOption,
-          request,
-        );
-        record.info.configOptions = response.configOptions;
-        applied = true;
-      } catch (err) {
-        rejected.push(configId);
-        this.opts.log.warn(
-          { err, threadId: record.info.threadId, configId },
-          '[acp-threads] initial config apply failed',
-        );
+    const rejected = new Set<string>();
+    const findOption = (id: string) => (record.info.configOptions ?? []).find((o) => o.id === id);
+    const passLimit = Object.keys(config).length + 1;
+    let pending = Object.entries(config);
+    for (let pass = 0; pending.length > 0 && pass < passLimit; pass += 1) {
+      const isModel = (id: string): boolean => findOption(id)?.category === 'model';
+      let changed = false;
+      const ordered = [...pending].sort(([a], [b]) => Number(isModel(b)) - Number(isModel(a)));
+      for (const [configId, value] of ordered) {
+        const option = findOption(configId);
+        if (option === undefined) continue;
+        if ((!sessionStateUnknown || pass > 0) && option.currentValue === value) continue;
+        if (!initialConfigValueValid(option, value)) continue;
+        const request: SetSessionConfigOptionRequest =
+          typeof value === 'boolean'
+            ? { sessionId, configId, type: 'boolean', value }
+            : { sessionId, configId, value };
+        try {
+          const response: SetSessionConfigOptionResponse = await conn.agent.request(
+            acpMethods.agent.session.setConfigOption,
+            request,
+          );
+          record.info.configOptions = response.configOptions;
+          rejected.delete(configId);
+          applied = true;
+          changed = true;
+        } catch (err) {
+          rejected.add(configId);
+          this.opts.log.info(
+            { err, threadId: record.info.threadId, configId, pass },
+            '[acp-threads] initial config apply attempt failed',
+          );
+        }
+        if (record.closed) return;
       }
-      if (record.closed) return;
+      if (!changed) break;
+      pending = Object.entries(config).filter(
+        ([configId, value]) => findOption(configId)?.currentValue !== value,
+      );
     }
-    if (rejected.length > 0) {
+    if (rejected.size > 0) {
       this.opts.log.warn(
-        { threadId: record.info.threadId, rejectedConfigIds: rejected, sessionStateUnknown },
+        {
+          threadId: record.info.threadId,
+          rejectedConfigIds: [...rejected],
+          sessionStateUnknown,
+        },
         '[acp-threads] some remembered config options could not be applied to the new session',
+      );
+    }
+    const missingConfigIds: string[] = [];
+    const unmatchedConfigIds: string[] = [];
+    for (const [configId, value] of Object.entries(config)) {
+      if (rejected.has(configId)) continue;
+      const option = findOption(configId);
+      if (option === undefined) missingConfigIds.push(configId);
+      else if (option.currentValue !== value) unmatchedConfigIds.push(configId);
+    }
+    if (missingConfigIds.length > 0 || unmatchedConfigIds.length > 0) {
+      this.opts.log.info(
+        {
+          threadId: record.info.threadId,
+          missingConfigIds,
+          unmatchedConfigIds,
+          sessionStateUnknown,
+        },
+        '[acp-threads] some remembered config options did not come back in the new session',
       );
     }
     if (applied) this.emitInfo(record);
@@ -2995,7 +3202,7 @@ export class AcpThreadManager {
     t.pendingPermissions.delete(requestId);
     clearTimeout(pending.timer);
     this.touchTurnActivity(t);
-    if (outcome.kind === 'selected') {
+    if (outcome.kind === 'selected' && pending.offeredOptionIds.has(outcome.optionId)) {
       pending.resolve({ outcome: { outcome: 'selected', optionId: outcome.optionId } });
       this.appendEvent(t, {
         kind: 'permission_resolved',
@@ -3118,6 +3325,11 @@ export class AcpThreadManager {
     this.clearStall(t);
     await this.persistence.whenIdle(threadId);
     await this.persistence.delete(threadId);
+    if (this.opts.globalDir !== null) {
+      await removeAgentBrowserFolders(this.opts.globalDir, threadId).catch((err: unknown) => {
+        this.opts.log.warn({ err, threadId }, '[acp-threads] removing browser folders failed');
+      });
+    }
     this.opts.log.info({ threadId }, '[acp-threads] thread deleted');
   }
 
@@ -3135,12 +3347,30 @@ export class AcpThreadManager {
     record: ThreadRecord,
     toolCall: ToolCallUpdate,
     options: PermissionOption[],
+    requestMeta?: unknown,
   ): Promise<RequestPermissionResponse> {
     this.touchTurnActivity(record);
+    const evidence = mergeToolCallEvidence(
+      await reportedToolCall(record, toolCall, requestMeta, this.opts.log),
+      toolCall,
+    );
+    const presented: ToolCallUpdate = {
+      ...toolCall,
+      ...(toolCall.title == null && evidence.title != null ? { title: evidence.title } : {}),
+      ...(toolCall.rawInput === undefined && evidence.rawInput !== undefined
+        ? { rawInput: evidence.rawInput }
+        : {}),
+    };
+    const browser = identifyBrowserCall(evidence, {
+      requestMeta,
+      browserInjected: record.browserInjected,
+      agentId: record.info.agent.id,
+    });
     const decision = this.opts.permissions.decide(
       record.info.agent.id,
       toolCall,
       options,
+      browser,
       record.chatGrants,
       this.opts.autoApproveOkTools?.() ?? true,
     );
@@ -3157,11 +3387,12 @@ export class AcpThreadManager {
     }
 
     const requestId = crypto.randomUUID();
+    const offered = offeredPermissionOptions(browser, options);
     this.appendEvent(record, {
       kind: 'permission_request',
       requestId,
-      toolCall,
-      options,
+      toolCall: presented,
+      options: offered,
       ...(readOnlyShellCommand(toolCall) !== null ? { readOnlyShell: true } : {}),
       ts: Date.now(),
     });
@@ -3184,14 +3415,18 @@ export class AcpThreadManager {
       timer.unref?.();
       record.pendingPermissions.set(requestId, {
         timer,
+        offeredOptionIds: new Set(offered.map((o) => o.optionId)),
         resolve: (response) => {
           if (response.outcome.outcome === 'selected') {
-            const chosen = options.find(
-              (o) =>
-                response.outcome.outcome === 'selected' && o.optionId === response.outcome.optionId,
-            );
+            const optionId = response.outcome.optionId;
+            const chosen = offered.find((o) => o.optionId === optionId);
             if (chosen !== undefined) {
-              void this.opts.permissions.recordChoice(record.info.agent.id, toolCall, chosen);
+              void this.opts.permissions.recordChoice(
+                record.info.agent.id,
+                toolCall,
+                chosen,
+                browser,
+              );
             }
           }
           resolvePromise(response);
@@ -3203,6 +3438,12 @@ export class AcpThreadManager {
   private handleSessionUpdate(record: ThreadRecord, notification: SessionNotification): void {
     this.touchTurnActivity(record);
     const update: SessionUpdate = notification.update;
+    if (
+      record.browserInjected &&
+      (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update')
+    ) {
+      rememberReportedToolCall(record, update);
+    }
     if (update.sessionUpdate === 'current_mode_update' && record.info.modes) {
       record.info.modes = { ...record.info.modes, currentModeId: update.currentModeId };
       this.emitInfo(record);
@@ -3506,6 +3747,7 @@ export class AcpThreadManager {
       agentRef: t.agentRef,
       docName: t.docName,
       contextWindow: t.confirmedContextWindow ?? null,
+      browserNotice: t.browserNotice,
     };
   }
 
@@ -3655,6 +3897,7 @@ function rehydratedRecord(meta: PersistedThreadMeta): ThreadRecord {
     child: null,
     conn: null,
     lastInit: null,
+    terminalAuthBase: null,
     sessionId: meta.sessionId,
     agentSessionId: `acp-${meta.info.threadId}`,
     events: [],
@@ -3668,6 +3911,10 @@ function rehydratedRecord(meta: PersistedThreadMeta): ThreadRecord {
     lastSuppressedAt: 0,
     subscribers: new Set(),
     pendingPermissions: new Map(),
+    reportedToolCalls: new Map(),
+    toolCallReportWaiters: new Map(),
+    browserInjected: false,
+    browserNotice: meta.browserNotice ?? null,
     pendingRuntimeConsent: new Map(),
     pendingPiBridgeConsent: new Map(),
     piBridgeDeclined: false,
@@ -3829,23 +4076,72 @@ function resumableFromCapabilities(init: InitializeResponse): boolean {
   return caps?.sessionCapabilities?.resume != null || caps?.loadSession === true;
 }
 
-function threadAuthMethods(methods: InitializeResponse['authMethods']): ThreadAuthMethod[] {
-  return (methods ?? []).flatMap((m) => {
-    if (typeof m !== 'object' || m === null) return [];
-    const { id, name, description, type } = m as {
-      id?: unknown;
-      name?: unknown;
-      description?: unknown;
-      type?: unknown;
+const REPORTED_TOOL_CALL_LIMIT = 256;
+
+const REPORTED_TOOL_CALL_WAIT_MS = 1_000;
+
+function mergeToolCallEvidence(
+  reported: BrowserCallEvidence | undefined,
+  current: BrowserCallEvidence,
+): BrowserCallEvidence {
+  const reportedMeta = asRecord(reported?._meta);
+  const currentMeta = asRecord(current._meta);
+  return {
+    title: current.title ?? reported?.title ?? null,
+    kind: current.kind ?? reported?.kind ?? null,
+    rawInput: current.rawInput ?? reported?.rawInput,
+    ...(reportedMeta !== null || currentMeta !== null
+      ? { _meta: { ...reportedMeta, ...currentMeta } }
+      : {}),
+  };
+}
+
+function rememberReportedToolCall(
+  record: ThreadRecord,
+  update: BrowserCallEvidence & { readonly toolCallId: string },
+): void {
+  const merged = mergeToolCallEvidence(record.reportedToolCalls.get(update.toolCallId), update);
+  record.reportedToolCalls.delete(update.toolCallId);
+  record.reportedToolCalls.set(update.toolCallId, merged);
+  if (record.reportedToolCalls.size > REPORTED_TOOL_CALL_LIMIT) {
+    const oldest = record.reportedToolCalls.keys().next().value;
+    if (oldest !== undefined) record.reportedToolCalls.delete(oldest);
+  }
+  const waiters = record.toolCallReportWaiters.get(update.toolCallId);
+  if (waiters === undefined) return;
+  record.toolCallReportWaiters.delete(update.toolCallId);
+  for (const wake of waiters) wake();
+}
+
+async function reportedToolCall(
+  record: ThreadRecord,
+  toolCall: ToolCallUpdate,
+  requestMeta: unknown,
+  log: PinoLogger,
+): Promise<BrowserCallEvidence | undefined> {
+  const id = toolCall.toolCallId;
+  const known = record.reportedToolCalls.get(id);
+  if (known !== undefined || !record.browserInjected) return known;
+  if (!needsReportedToolCall(toolCall, requestMeta, record.info.agent.id)) return known;
+  await new Promise<void>((resolve) => {
+    const waiters = record.toolCallReportWaiters.get(id) ?? [];
+    const wake = () => {
+      clearTimeout(timer);
+      const remaining = (record.toolCallReportWaiters.get(id) ?? []).filter((w) => w !== wake);
+      if (remaining.length > 0) record.toolCallReportWaiters.set(id, remaining);
+      else record.toolCallReportWaiters.delete(id);
+      resolve();
     };
-    if (typeof id !== 'string' || typeof name !== 'string') return [];
-    return [
-      {
-        id,
-        name,
-        ...(typeof description === 'string' ? { description } : {}),
-        ...(typeof type === 'string' ? { kind: type } : {}),
-      },
-    ];
+    const timer = setTimeout(() => {
+      log.warn(
+        { threadId: record.info.threadId, toolCallId: id },
+        '[acp-threads] no tool call report arrived for a permission request in a chat with the browser; asking with no option to always allow it',
+      );
+      wake();
+    }, REPORTED_TOOL_CALL_WAIT_MS);
+    timer.unref?.();
+    waiters.push(wake);
+    record.toolCallReportWaiters.set(id, waiters);
   });
+  return record.reportedToolCalls.get(id);
 }

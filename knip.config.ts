@@ -31,7 +31,6 @@ export default {
     'ps', // process listing — diagnose.ts, process-scan.ts
     'lsof', // open-file listing — diagnose.ts, process-scan.ts
     'pgrep', // process lookup — process-scan.ts
-    'where', // Windows binary lookup — git-preflight.ts, slides slidev probe
     'taskkill', // Windows process-tree termination — acp/launch.ts
     'sw_vers', // macOS version query — bug-report.ts
     'mktemp', // where macOS puts -t files — b4-acceptance-gate.test.ts observes the gate's scratch
@@ -63,8 +62,7 @@ export default {
     'packages/app/src/lib/perf/mark.ts': ['types'],
     'packages/app/src/editor/typing-burst-detector.ts': ['exports', 'types'],
     'packages/server/src/bridge-intake.ts': ['types'],
-    'packages/core/src/schemas/api.type-tests.ts': ['files'],
-    'packages/core/src/git-pathspec.type-tests.ts': ['files'],
+    '**/*.type-tests.ts': ['files'],
     'packages/server/src/http/request-validation.ts': ['exports', 'types'],
     'packages/server/src/http/error-response.ts': ['exports'],
     'packages/app/src/editor/http-client.ts': ['types'],
@@ -103,7 +101,11 @@ export default {
   },
   workspaces: {
     '.': {
-      entry: ['test-support/fixtures/no-net-connect/no-net-connect.fixture.ts'],
+      entry: [
+        'test-support/fixtures/no-net-connect/no-net-connect.fixture.ts',
+        'scripts/check-no-major-changeset.mjs',
+      ],
+      vitest: { entry: ['**/*.uncached.test.{ts,tsx,mjs}'] },
     },
     'packages/app': {
       entry: [
