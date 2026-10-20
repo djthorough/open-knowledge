@@ -95,11 +95,12 @@ export function projectV1LockState(state: LockState): V1LockObservation {
   switch (state.status) {
     case 'alive':
     case 'dead-pid':
+    case 'reused-pid':
     case 'foreign-host':
       return {
         lock,
         ...projectV1LockMetadata(state.lock),
-        alive: state.status === 'alive' ? true : state.status === 'dead-pid' ? false : null,
+        alive: state.status === 'alive' ? true : state.status === 'foreign-host' ? null : false,
       };
     case 'unverified-owner':
       return {

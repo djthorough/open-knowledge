@@ -29,7 +29,7 @@ import type {
   OkDesktopBridge,
   OkDesktopConfig,
   OkEditorActiveTargetSnapshot,
-  OkEditorViewMenuStateSnapshot,
+  OkEditorViewMenuStateChange,
   OkLocalOpAuthEvent,
   OkLocalOpCloneEvent,
   OkLocalOpStream,
@@ -81,6 +81,7 @@ import {
   asSpellingLanguagesSetResult,
 } from '../shared/menu-dispatch-results.ts';
 import {
+  CLI_COMMAND_NAME_ARG_NAME,
   LANGUAGE_PREFERENCE_ARG_NAME,
   MCP_SERVER_NAME_ARG_NAME,
   resolveOkDesktopMode,
@@ -285,6 +286,7 @@ const MENU_ACTION_BUFFER_POLICY: Record<OkMenuAction, MenuActionBufferPolicy> = 
   'toggle-doc-panel': 'parity',
   'toggle-terminal': 'parity',
   'toggle-agent-panel': 'parity',
+  'toggle-editor': 'parity',
   'toggle-show-hidden-files': 'parity',
   'toggle-show-ok-folders': 'parity',
   'toggle-show-only-markdown-files': 'parity',
@@ -849,7 +851,7 @@ const bridge: OkDesktopBridge = {
     notifyActiveTargetChanged: (target: OkEditorActiveTargetSnapshot) => {
       invoke('ok:editor:active-target-changed', target).catch(() => {});
     },
-    notifyViewMenuStateChanged: (state: Partial<OkEditorViewMenuStateSnapshot>) => {
+    notifyViewMenuStateChanged: (state: OkEditorViewMenuStateChange) => {
       invoke('ok:editor:view-menu-state-changed', state).catch(() => {});
     },
     notifyBackgroundThrottle: (signal: { hasPendingWork: boolean; enabled: boolean }) => {
@@ -967,6 +969,7 @@ const bridge: OkDesktopBridge = {
   appVersion: parseArg('app-version') ?? '0.0.0',
   instanceLabel: parseArg('instance-label') ?? null,
   mcpServerName: parseArg(MCP_SERVER_NAME_ARG_NAME) ?? null,
+  cliCommandName: parseArg(CLI_COMMAND_NAME_ARG_NAME) ?? null,
 
   getPathForFile: (file) => {
     const path = webUtils.getPathForFile(file);

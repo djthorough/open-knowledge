@@ -9,10 +9,16 @@ if (process.argv.includes('--no-color')) {
 }
 
 trustSystemCertificates();
+registerWindowsProcessStartReader();
 
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { formatIgnoredCommittedKey, humanFormat } from '@inkeep/open-knowledge-core';
+import {
+  currentCliCommandName,
+  currentDesktopProduct,
+  formatIgnoredCommittedKey,
+  humanFormat,
+} from '@inkeep/open-knowledge-core';
 import { type Config, ConfigSchema, trustSystemCertificates } from '@inkeep/open-knowledge-server';
 import { Command } from 'commander';
 import { getCliLogger, initCliLogger } from './cli-logger.ts';
@@ -27,6 +33,7 @@ import { deinitCommand } from './commands/deinit.ts';
 import { createRealDetectDeps, detectDesktop, launchDesktop } from './commands/desktop-dispatch.ts';
 import { diagnoseCommand } from './commands/diagnose.ts';
 import { embeddingsCommand } from './commands/embeddings/index.ts';
+import { registerWindowsProcessStartReader } from './commands/holder-process-start.ts';
 import { initCommand } from './commands/init.ts';
 import { lintCommand } from './commands/lint.ts';
 import { mcpCommand } from './commands/mcp.ts';
@@ -63,7 +70,7 @@ let observationContext: ObservationContext = {
 };
 
 program
-  .name('open-knowledge')
+  .name(currentDesktopProduct().cliCommandNames[1])
   .description('Local-first knowledge base with CRDT collaboration')
   .usage('[options] [file | command]')
   .version(buildVersionNotice(PACKAGE_VERSION))
@@ -211,13 +218,13 @@ program.addCommand(lintCommand(() => resolvedConfig));
 program.addCommand(auditCommand(() => resolvedConfig));
 
 const uiTombstone = new Command('ui')
-  .description('Removed: the editor UI is served by `ok start`')
+  .description(`Removed: the editor UI is served by \`${currentCliCommandName()} start\``)
   .allowUnknownOption()
   .allowExcessArguments()
   .argument('[args...]')
   .action(() => {
     console.error(
-      '`ok ui` was removed — the editor UI is served by the project server. Run `ok start` instead.',
+      `\`${currentCliCommandName()} ui\` was removed — the editor UI is served by the project server. Run \`${currentCliCommandName()} start\` instead.`,
     );
     process.exit(1);
   });
@@ -269,14 +276,15 @@ program.addCommand(shareCommand());
 
 program.addCommand(sharingCommand());
 
+const helpCommand = currentCliCommandName();
 program.addHelpText(
   'after',
   `
 Examples:
-  ok                       Launch the desktop app (or start a local server if it isn't installed)
-  ok notes.md              Open a single markdown file in the editor
-  ok ./specs/foo/SPEC.md   Open a file inside a project, focused on that doc
-  ok open ./start.md       Open a file whose name collides with a subcommand`,
+  ${helpCommand}                       Launch the desktop app (or start a local server if it isn't installed)
+  ${helpCommand} notes.md              Open a single markdown file in the editor
+  ${helpCommand} ./specs/foo/SPEC.md   Open a file inside a project, focused on that doc
+  ${helpCommand} open ./start.md       Open a file whose name collides with a subcommand`,
 );
 
 {

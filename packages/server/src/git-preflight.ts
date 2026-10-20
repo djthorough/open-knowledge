@@ -2,6 +2,7 @@ import { type SpawnSyncOptions, spawnSync } from 'node:child_process';
 import { accessSync, existsSync, constants as fsConstants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, delimiter as PATH_DELIM } from 'node:path';
+import { currentCliCommandName } from '@inkeep/open-knowledge-core';
 import { withHiddenWindowsConsole } from './child-process-windows-hide.ts';
 
 export const MIN_GIT_VERSION = '2.31.0';
@@ -27,16 +28,29 @@ export interface InstallGuidance {
   readonly url: string;
 }
 
+type GitProbeFailureReason = 'enoent' | 'spawn-failed' | 'unparseable' | 'timeout' | 'nonzero';
+
+export interface GitProbeFailures {
+  readonly path: GitProbeFailureReason;
+  readonly fallback: GitProbeFailureReason | null;
+}
+
 export class GitNotAvailableError extends Error {
   readonly code = 'GIT_NOT_AVAILABLE';
   readonly platform: NodeJS.Platform;
   readonly guidance: InstallGuidance;
+  readonly probe: GitProbeFailures | null;
 
-  constructor(platform: NodeJS.Platform, guidance: InstallGuidance, options?: { cause?: unknown }) {
+  constructor(
+    platform: NodeJS.Platform,
+    guidance: InstallGuidance,
+    options?: { cause?: unknown; probe?: GitProbeFailures },
+  ) {
     super(buildMissingMessage(guidance), options);
     this.name = 'GitNotAvailableError';
     this.platform = platform;
     this.guidance = guidance;
+    this.probe = options?.probe ?? null;
   }
 }
 
@@ -77,6 +91,7 @@ export function detectGit(): GitDetected {
     };
   }
 
+  let fallback: GitProbeFailureReason | null = null;
   for (const candidate of fallbackPaths(process.platform)) {
     if (!existsSync(candidate)) continue;
     const result = probeGit(candidate);
@@ -88,9 +103,12 @@ export function detectGit(): GitDetected {
         source: 'fallback',
       };
     }
+    fallback = result.reason;
   }
 
-  throw new GitNotAvailableError(process.platform, buildGuidance(process.platform));
+  throw new GitNotAvailableError(process.platform, buildGuidance(process.platform), {
+    probe: { path: stage1.reason, fallback },
+  });
 }
 
 export function assertGitAvailable(): GitDetected {
@@ -109,7 +127,7 @@ export function assertGitAvailable(): GitDetected {
 
 type ProbeResult =
   | { kind: 'ok'; version: string; resolvedPath: string }
-  | { kind: 'fail'; reason: 'enoent' | 'unparseable' | 'timeout' | 'nonzero' };
+  | { kind: 'fail'; reason: GitProbeFailureReason };
 
 function probeGit(command: string): ProbeResult {
   const opts: SpawnSyncOptions = withHiddenWindowsConsole({
@@ -122,7 +140,8 @@ function probeGit(command: string): ProbeResult {
   if (result.error) {
     if ('signal' in result && result.signal === 'SIGTERM')
       return { kind: 'fail', reason: 'timeout' };
-    return { kind: 'fail', reason: 'enoent' };
+    const code = (result.error as NodeJS.ErrnoException).code;
+    return { kind: 'fail', reason: code === 'ENOENT' ? 'enoent' : 'spawn-failed' };
   }
   if (result.status !== 0) {
     return { kind: 'fail', reason: 'nonzero' };
@@ -377,7 +396,9 @@ function buildMissingMessage(g: InstallGuidance): string {
   lines.push(`Or download from: ${g.url}`);
   lines.push('');
   lines.push('After installing, re-run OpenKnowledge.');
-  lines.push('Run `ok diagnose health --check git` to verify your installation.');
+  lines.push(
+    `Run \`${currentCliCommandName()} diagnose health --check git\` to verify your installation.`,
+  );
   return lines.join('\n');
 }
 
@@ -404,7 +425,9 @@ function buildTooOldMessage(
   lines.push(`Or download from: ${g.url}`);
   lines.push('');
   lines.push('After updating, re-run OpenKnowledge.');
-  lines.push('Run `ok diagnose health --check git` to verify your installation.');
+  lines.push(
+    `Run \`${currentCliCommandName()} diagnose health --check git\` to verify your installation.`,
+  );
   return lines.join('\n');
 }
 

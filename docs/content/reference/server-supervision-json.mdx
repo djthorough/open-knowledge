@@ -45,7 +45,7 @@ All fields named below are required unless stated otherwise. Unavailable values 
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `lock` | `{path, state}` | `path` is an absolute path or `null`; `state` is `missing`, `corrupt`, `read-error`, `unverified-owner`, `foreign-host`, `dead-pid`, `alive`, or `unknown` if classification could not run. |
+| `lock` | `{path, state}` | `path` is an absolute path or `null`; `state` is `missing`, `corrupt`, `read-error`, `unverified-owner`, `foreign-host`, `dead-pid`, `reused-pid`, `alive`, or `unknown` if classification could not run. |
 | `process` | object or `null` | A safely parsed PID and nullable lock metadata: `{pid, startedAt, port, hostname, draining}`. `pid` is a positive integer; `startedAt` is a timestamp or `null`; `port` is an integer or `null`; `hostname` is a string or `null`; `draining` is a boolean or `null`. |
 | `alive` | boolean or `null` | Local process liveness, or unknown. |
 | `identity` | `{serverInstanceId}` or `null` | Nonempty instance ID only after the server response matches the selected project and live PID. |
@@ -154,7 +154,7 @@ When nonnull, `runtime` is `{source, revision, effectiveSince, port, bind, idleS
 
 For a numeric target, v1 resolves all matching discovered stoppable locks before mutation. Repeated discovery of one normalized lock path collapses. Distinct paths collapse only when server inspection confirms the same instance ID, PID, and canonical project root for both. If more than one candidate remains, `ambiguous-target` refuses without a signal, client probe, or lock mutation. Use a reported validated `projectRoot` to retry with `ok stop <directory>`. Copied lock metadata, a matching port/PID, or an older or unreachable inspection endpoint never proves two paths identify one server. Legacy text invocations retain their first-match lookup.
 
-`--force` bypasses the channel-mismatch and connected-client refusals. A server whose lock names another release channel (Stable or Beta) is refused before the connected-client probe. Use that channel’s app or CLI, or pass `--force` to explicitly override both guards. The CLI channel comes from `OK_CHANNEL`, the executable name, or a Stable default. Locks without channel metadata retain the existing behavior; an unsupported `OK_CHANNEL` warns and skips the channel check. An unverified owner is never signalled. A foreign-host lock with a locally live PID retains the existing stoppable behavior. When the connected-client probe fails or is unavailable, stop proceeds under its existing fail-open policy. `signalled` means SIGTERM was sent; it does not mean process exit was observed. There is no termination-wait or termination-timeout result. `all` keeps a record for each considered lock; a mix of successful signals and refusal or failure is `partially-signalled`. When no target is signalled, failures take precedence over refusals; channel mismatch takes precedence over connected-client and ownership refusals in the aggregate result. Each target retains its own code and detail.
+`--force` bypasses the channel-mismatch and connected-client refusals. A server whose lock names another release channel (Stable, Beta, or a dev build) is refused before the connected-client probe. Use that channel’s app or CLI, or pass `--force` to explicitly override both guards. The CLI channel comes from `OK_CHANNEL`, the executable name, or a Stable default. Locks without channel metadata retain the existing behavior; an unsupported `OK_CHANNEL` warns and skips the channel check. Immediately before signalling, the CLI verifies that the live process is the lock writer. `--force` never bypasses this identity check. Foreign ownership or an unreadable, incomparable, or mismatched process start returns `ownership-unverified`. A server that has exited or whose PID has been reused returns `already-stopped` without signalling the replacement process. Locks already classified as `reused-pid` report readiness `not-running` and `alive: false`; their recorded metadata describes the former server. When the connected-client probe fails or is unavailable, stop proceeds under its existing fail-open policy. `signalled` means SIGTERM was sent; it does not mean process exit was observed. There is no termination-wait or termination-timeout result. `all` keeps a record for each considered lock; a mix of successful signals and refusal or failure is `partially-signalled`. When no target is signalled, failures take precedence over refusals; channel mismatch takes precedence over connected-client and ownership refusals in the aggregate result. Each target retains its own code and detail.
 
 ### Another release channel refuses stop
 
@@ -191,7 +191,7 @@ A Beta CLI targeting a Stable server without `--force` returns:
 | Code | Kind | Exit | Meaning |
 | --- | --- | --- | --- |
 | `signalled` | success | 0 | SIGTERM was sent, with no claim that exit was observed. |
-| `already-stopped` | no-op | 0 | No stoppable selected project/path process, or no stoppable `all` candidate. |
+| `already-stopped` | no-op | 0 | No stoppable selected process, or the server exited or its PID was reused before signalling. |
 | `target-not-found` | no-op | 0 | No discovered stoppable lock matched the numeric selector. |
 | `clients-connected` | refused | 1 | A positive client count blocked an unforced stop. |
 | `channel-mismatch` | refused | 1 | The server belongs to another release channel; use its app or CLI, or explicitly pass `--force`. |
@@ -229,7 +229,9 @@ Clean removes a dead-PID lock or locally owned corrupt lock when unlink succeeds
 | `live-retained` | no-op | 0 | A live local lock was retained. |
 | `ownership-unverified` | refused | 1 | Foreign or uncertain ownership caused retention. |
 | `read-failed` | error | 1 | The lock could not be read. |
-| `remove-failed` | error | 1 | Unlink failed. |
+| `remove-failed` | error | 1 | Removal failed, or the lock changed or disappeared after inspection. |
 | `partially-cleaned` | partial | 1 | Reserved for a future compatible multi-target cleanup; not emitted today. |
 | `project-unavailable` | error | 1 | Project or configuration resolution failed. |
 | `operation-failed` | error | 1 | Another command-level operation failed. |
+
+Cleanup removes stale locks only when their contents still match the inspected bytes. Reused PIDs are stale server locks; a replacement process is never signalled. If the lock changes or disappears before removal, cleanup reports `remove-failed` and leaves any replacement lock in place.

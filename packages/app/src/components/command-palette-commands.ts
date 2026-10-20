@@ -53,12 +53,13 @@ import { requestDocPanelTab } from '@/components/doc-panel-events';
 import { DiscordIcon } from '@/components/icons/discord';
 import { GithubIcon } from '@/components/icons/github';
 import type { ResolvedNavigationTarget } from '@/components/navigation-targets';
+import { PANE_ICON } from '@/components/pane-icons';
 import { requestSkillsDockExpanded } from '@/components/skills-dock-expanded-store';
 import type { OkDesktopBridge, OkMenuAction } from '@/lib/desktop-bridge-types';
 import { i18n } from '@/lib/i18n';
 import type { KeyboardShortcutId } from '@/lib/keyboard-shortcuts';
 import { openDocInNoteWindow } from '@/lib/open-note-window';
-import { SETTINGS_OPEN_HASH } from '@/lib/use-settings-route';
+import { openSettings } from '@/lib/use-settings-route';
 import type { ViewMenuState } from '@/lib/view-menu-state-store';
 
 export type ContextualTargetKind = 'doc' | 'folder' | 'asset' | 'none';
@@ -97,7 +98,7 @@ export interface PaletteCommandContext {
   openNewItemDialog(kind: 'file' | 'folder'): void;
   openSeedDialog(): void;
   openCreateProjectDialog(): void;
-  openReportBugDialog(): void;
+  reportBug(): void;
   openBugReportHistory(): void;
   openFeedbackDialog(): void;
   createBlankSkill(): void;
@@ -155,6 +156,8 @@ const PALETTE_COMMAND_LABELS = {
   sidebarHide: msg`Hide sidebar`,
   docPanelShow: msg`Show document panel`,
   docPanelHide: msg`Hide document panel`,
+  editorShow: msg`Show Editor`,
+  editorHide: msg`Hide Editor`,
   terminalShow: msg`Show Terminal`,
   terminalHide: msg`Hide Terminal`,
   terminalMoveRight: msg`Move Terminal to right`,
@@ -240,9 +243,10 @@ const COMMAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   'switch-worktree': GitBranch,
   'toggle-sidebar': PanelLeft,
   'toggle-doc-panel': PanelRight,
-  'toggle-terminal': SquareTerminal,
+  'toggle-terminal': PANE_ICON.terminal,
   'move-terminal': SquareTerminal,
-  'toggle-agent-panel': MessageSquare,
+  'toggle-agent-panel': PANE_ICON.agents,
+  'toggle-editor': PANE_ICON.editor,
   'toggle-show-hidden-files': Eye,
   'toggle-show-ok-folders': Folder,
   'toggle-show-only-markdown-files': FileText,
@@ -314,17 +318,14 @@ const COMMAND_DISPATCH: Record<string, (ctx: PaletteCommandContext) => void> = {
   },
   settings: (ctx) => {
     ctx.closePalette();
-    if (window.location.hash !== SETTINGS_OPEN_HASH) {
-      window.location.hash = SETTINGS_OPEN_HASH;
-    }
+    openSettings();
   },
   'install-claude-desktop': (ctx) => {
     ctx.closePalette();
     window.location.hash = '#install-claude-desktop';
   },
   'report-bug': (ctx) => {
-    ctx.closePalette();
-    ctx.openReportBugDialog();
+    ctx.reportBug();
   },
   'bug-report-history': (ctx) => {
     ctx.closePalette();
@@ -377,7 +378,8 @@ function resolvePaletteLabel(cmd: CommandIdentity, ctx: PaletteCommandContext): 
     ) {
       return i18n._(PALETTE_COMMAND_LABELS[overrideKey as PaletteLabelKey]);
     }
-    const visible = ctx.viewMenuState[cmd.stateToggle.stateField] === true;
+    const visible =
+      (ctx.viewMenuState[cmd.stateToggle.stateField] ?? cmd.stateToggle.defaultVisible) === true;
     const key = visible ? cmd.stateToggle.hideKey : cmd.stateToggle.showKey;
     return i18n._(paletteLabelDescriptor(key as PaletteLabelKey, platform));
   }

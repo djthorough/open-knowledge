@@ -1,5 +1,7 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { currentCliCommandName } from '@inkeep/open-knowledge-core';
 import { atomicTempPath } from '@inkeep/open-knowledge-core/server';
 import {
   tracedMkdirSync,
@@ -14,7 +16,12 @@ import { contentHash } from './version-hash.ts';
 export interface StoreFailure {
   code?: string;
   message: string;
+  removal?: StoreFailureRemoval;
 }
+
+export type StoreFailureRemoval =
+  | { kind: 'renamed'; renamedTo: string }
+  | { kind: 'path-occupied' };
 
 export interface StoreAttemptToken {
   readonly docName: string;
@@ -23,15 +30,33 @@ export interface StoreAttemptToken {
 
 export type StorePublishOutcome = 'published' | 'stale' | 'reentrant';
 
+export type DeferredStoreOutcome =
+  | { readonly kind: 'completed' }
+  | { readonly kind: 'failed'; readonly failure: StoreFailure }
+  | { readonly kind: 'discarded' };
+
+export type DeferredStoreWait = DeferredStoreOutcome | { readonly kind: 'unsettled' };
+
+export interface DeferredStoreSettlement {
+  settle(outcome: DeferredStoreOutcome): void;
+}
+
 export function assertNeverStorePublishOutcome(outcome: never): never {
   throw new Error(`[StorePublishOutcome] unhandled variant: ${JSON.stringify(outcome)}`);
+}
+
+export function assertNeverDeferredStoreWait(wait: never): never {
+  throw new Error(`[DeferredStoreWait] unhandled variant: ${JSON.stringify(wait)}`);
 }
 
 export const OK_DOC_REMOVED = 'OK_DOC_REMOVED';
 export const OK_PATH_UNRESOLVABLE = 'OK_PATH_UNRESOLVABLE';
 export const OK_STORE_REFUSED = 'OK_STORE_REFUSED';
+export const OK_STORE_DISCARDED = 'OK_STORE_DISCARDED';
 
 const IN_FLIGHT_FLUSH_TTL_MS = 60_000;
+
+export const WRITE_WAIT_BUDGET_MS = 20_000;
 
 export const DISPLACED_VERSION_TTL_MS = 30 * 60_000;
 export const DISPLACED_VERSION_LIMIT = 8;
@@ -166,7 +191,7 @@ export class DocumentDurabilityStateError extends Error {
           ? 'This build does not support the snapshot schema. Preserve the file and restore a compatible backup or contact support to identify a compatible build.'
           : 'Restore this snapshot from a known-good backup, or contact support to recover its protected edits.';
     super(
-      `Cannot safely open this project: its stale-write recovery snapshot is ${kind}${code ? ` [${code}]` : ''} (${path}). The snapshot has been preserved because it may contain the only copy of protected edits. ${recovery} Run ok bug-report from the project directory to collect diagnostics without starting the server. Do not delete it to bypass recovery.`,
+      `Cannot safely open this project: its stale-write recovery snapshot is ${kind}${code ? ` [${code}]` : ''} (${path}). The snapshot has been preserved because it may contain the only copy of protected edits. ${recovery} Run ${currentCliCommandName()} bug-report from the project directory to collect diagnostics without starting the server. Do not delete it to bypass recovery.`,
       { cause },
     );
     this.name = 'DocumentDurabilityStateError';
@@ -267,6 +292,10 @@ export class DocumentDurabilityState {
   private nextDisplacedExpiryAt = Number.POSITIVE_INFINITY;
   private activeBranch: string;
   private batchInProgress = false;
+  private writeAdmissionHolds = 0;
+  private readonly writeAdmissionWaiters = new Set<() => void>();
+  private readonly writeWaitDeadline = new AsyncLocalStorage<number>();
+  private readonly deferredStoreOutcomes = new Map<string, Promise<DeferredStoreOutcome>>();
 
   constructor(initialBranch = 'main', options: DocumentDurabilityStateOptions = {}) {
     this.activeBranch = initialBranch;
@@ -799,6 +828,91 @@ export class DocumentDurabilityState {
 
   isBatchInProgress(): boolean {
     return this.batchInProgress;
+  }
+
+  holdWriteAdmission(): () => void {
+    this.writeAdmissionHolds++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.writeAdmissionHolds--;
+      if (this.writeAdmissionHolds > 0) return;
+      const waiters = [...this.writeAdmissionWaiters];
+      this.writeAdmissionWaiters.clear();
+      for (const wake of waiters) wake();
+    };
+  }
+
+  isWriteAdmissionHeld(): boolean {
+    return this.writeAdmissionHolds > 0;
+  }
+
+  runWithinWriteWaitBudget<T>(fn: () => T, budgetMs = WRITE_WAIT_BUDGET_MS): T {
+    return this.writeWaitDeadline.run(Date.now() + budgetMs, fn);
+  }
+
+  private remainingWriteWait(timeoutMs: number): number {
+    const deadline = this.writeWaitDeadline.getStore();
+    if (deadline === undefined) return timeoutMs;
+    return Math.max(0, Math.min(timeoutMs, deadline - Date.now()));
+  }
+
+  async whenWriteAdmitted(timeoutMs = WRITE_WAIT_BUDGET_MS): Promise<boolean> {
+    if (!this.isWriteAdmissionHeld()) return true;
+    const bound = this.remainingWriteWait(timeoutMs);
+    if (bound === 0) return false;
+    let wake: () => void = () => {};
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      wake();
+    }, bound);
+    try {
+      while (this.isWriteAdmissionHeld() && !timedOut) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          this.writeAdmissionWaiters.add(resolve);
+        });
+        this.writeAdmissionWaiters.delete(wake);
+      }
+      return !this.isWriteAdmissionHeld();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  openDeferredStore(docName: string): DeferredStoreSettlement {
+    const { promise, resolve } = Promise.withResolvers<DeferredStoreOutcome>();
+    this.deferredStoreOutcomes.set(docName, promise);
+    return {
+      settle: (outcome) => {
+        if (this.deferredStoreOutcomes.get(docName) === promise) {
+          this.deferredStoreOutcomes.delete(docName);
+        }
+        resolve(outcome);
+      },
+    };
+  }
+
+  async awaitDeferredStoreOutcome(
+    docName: string,
+    timeoutMs = WRITE_WAIT_BUDGET_MS,
+  ): Promise<DeferredStoreWait | undefined> {
+    const pending = this.deferredStoreOutcomes.get(docName);
+    if (pending === undefined || !this.isWriteAdmissionHeld()) return undefined;
+    const unsettled = { kind: 'unsettled' } as const;
+    const bound = this.remainingWriteWait(timeoutMs);
+    if (bound === 0) return unsettled;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<typeof unsettled>((resolve) => {
+      timer = setTimeout(() => resolve(unsettled), bound);
+    });
+    try {
+      return await Promise.race([pending, expired]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   markAgentWriteStore(docName: string): void {

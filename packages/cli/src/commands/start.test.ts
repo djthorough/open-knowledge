@@ -1,5 +1,6 @@
 import type { spawn as NativeSpawn } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -45,6 +46,14 @@ import {
   withEphemeralTempDirReap,
   withIdleShutdownProcessExit,
 } from './start.ts';
+
+beforeEach(() => {
+  vi.stubEnv('OK_CHANNEL', 'stable');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('resolveHost', () => {
   test('falls back to HOST env when --bind is absent', () => {
@@ -1309,6 +1318,40 @@ describe('tryDescribeLockCollision', () => {
     expect(tryDescribeLockCollision(err, '/other', serverModule)).toBe(err.message);
     expect(err.message).toContain('Close that session');
   });
+
+  test.runIf(process.platform !== 'win32' && process.getuid?.() !== 0)(
+    'a lock acquisition cannot read has its remedy as the message, without a stack',
+    async () => {
+      const serverModule = await import('@inkeep/open-knowledge-server');
+      const projectDir = await mkdtemp(join(tmpdir(), 'ok-start-unreadable-lock-'));
+      const lockDir = join(projectDir, '.ok', 'local');
+      const lockPath = join(lockDir, 'server.lock');
+      try {
+        mkdirSync(lockDir, { recursive: true });
+        writeFileSync(lockPath, '{}');
+        chmodSync(lockPath, 0o000);
+        const err = (() => {
+          try {
+            serverModule.acquireProcessLock({
+              lockName: 'server',
+              lockDir,
+              metadata: { port: 0, worktreeRoot: projectDir },
+            });
+          } catch (thrown) {
+            return thrown;
+          }
+          return undefined;
+        })();
+
+        expect(tryDescribeLockCollision(err, projectDir, serverModule)).toBe(
+          `[server-lock] Could not read the lock at ${lockPath}: EACCES: permission denied, open '${lockPath}'. Restore file and parent-directory access, then retry.`,
+        );
+      } finally {
+        chmodSync(lockPath, 0o600);
+        await rm(projectDir, { recursive: true, force: true });
+      }
+    },
+  );
   function fakeServerModule(opts: {
     meta?: { kind?: string; pid?: number; port?: number; hostname?: string } | null;
     throwOnRead?: boolean;
@@ -1912,5 +1955,31 @@ describe('startCommand — flag-conflict guards (exit 2)', () => {
     ]);
     expect(code).toBe(2);
     expect(stderr).toContain('--react-shell-dist-dir');
+  });
+});
+
+describe('start messages name the running channel command', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test('Stable keeps ok in the missing-setup error and the reuse notice', () => {
+    vi.stubEnv('OK_CHANNEL', 'stable');
+    expect(new OkDirMissingError('/p').message).toBe(
+      "This directory isn't set up yet. Run `ok init` first, then `ok start` again.",
+    );
+    expect(formatServerReuseNotice({ url: 'u', pid: 7, servesUi: true })[2]).toBe(
+      'Leaving it running — run `ok stop` first if you want a fresh server.',
+    );
+  });
+
+  test('Beta names ok-beta in the missing-setup error and the reuse notice', () => {
+    vi.stubEnv('OK_CHANNEL', 'beta');
+    expect(new OkDirMissingError('/p').message).toBe(
+      "This directory isn't set up yet. Run `ok-beta init` first, then `ok-beta start` again.",
+    );
+    expect(formatServerReuseNotice({ url: 'u', pid: 7, servesUi: true })[2]).toBe(
+      'Leaving it running — run `ok-beta stop` first if you want a fresh server.',
+    );
   });
 });

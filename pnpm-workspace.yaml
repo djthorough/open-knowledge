@@ -34,19 +34,6 @@ minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - '@inkeep/*'
   - '@visimer/*'
-  # The four packages the electron-builder 26.16.1 train bumped; the keychain
-  # fix itself is in app-builder-lib and the others pin it exactly. Published
-  # 2026-09-07T18:24Z, so these stop having any effect at 2026-09-10T18:24Z
-  # (publish + minimumReleaseAge) — delete all four then. Version-qualified,
-  # so every later release stays gated.
-  - 'electron-builder@26.16.1'
-  - 'electron-builder-squirrel-windows@26.16.1'
-  - 'app-builder-lib@26.16.1'
-  - 'dmg-builder@26.16.1'
-  # pnpm 12 re-verifies locked entries against the cooldown, so the exact
-  # Electron pin from #5276 (published 2026-09-30T06:59Z) fails every install
-  # until 2026-10-03T06:59Z. Version-qualified; delete it after that.
-  - 'electron@44.5.1'
 
 # Bootstrap is explicit; running a script must not trigger an implicit install.
 verifyDepsBeforeRun: false
@@ -313,6 +300,7 @@ patchedDependencies:
   '@tiptap/extension-drag-handle@3.22.3': patches/@tiptap%2Fextension-drag-handle@3.22.3.patch
   '@tiptap/y-tiptap@3.0.3': patches/@tiptap%2Fy-tiptap@3.0.3.patch
   '@xterm/xterm@6.0.0': patches/@xterm%2Fxterm@6.0.0.patch
+  'cmdk@1.1.1': patches/cmdk@1.1.1.patch
   'react-medium-image-zoom@5.4.3': patches/react-medium-image-zoom@5.4.3.patch
   'react-resizable-panels@4.12.1': patches/react-resizable-panels@4.12.1.patch
   'y-indexeddb@9.0.12': patches/y-indexeddb@9.0.12.patch

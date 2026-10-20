@@ -1,3 +1,4 @@
+// oxlint-disable ok/no-raw-error-toast -- pre-rule backlog: toasts here show raw error text; delete this line once the file maps each failure to written copy. See https://github.com/inkeep/open-knowledge/blob/main/lint-plugins/ok-rules/README.md#no-raw-error-toast
 // oxlint-disable ok/no-raw-html-interactive-element -- pre-rule backlog — file uses raw <button>/<input>/<textarea> awaiting shadcn migration; tracked at https://github.com/inkeep/open-knowledge/blob/main/lint-plugins/ok-rules/README.md#no-raw-html-interactive-element
 
 // oxlint-disable ok/no-physical-direction-utility -- pre-rule backlog — physical margin/padding/inset utilities predate the rule; drain by swapping ml/mr → ms/me, pl/pr → ps/pe, left/right → start/end, then deleting this line. See https://github.com/inkeep/open-knowledge/blob/main/lint-plugins/ok-rules/README.md#no-physical-direction-utility
@@ -613,7 +614,7 @@ function PatternRowInput({
           aria-label={t`Pattern ${patternNumber}`}
           className={cn(
             'h-7 flex-1 font-mono text-xs',
-            warnings.length > 0 ? 'border-amber-500/60 focus-visible:ring-amber-500/40' : '',
+            warnings.length > 0 ? 'border-warning/60 focus-visible:ring-warning/40' : '',
           )}
           data-testid="settings-okignore-row-input"
         />
@@ -667,7 +668,7 @@ function AddPatternRow({
             flashing
               ? 'border-destructive ring-2 ring-destructive/30 focus-visible:ring-destructive/50'
               : warnings.length > 0
-                ? 'border-amber-500/60 focus-visible:ring-amber-500/40'
+                ? 'border-warning/60 focus-visible:ring-warning/40'
                 : '',
           )}
           data-testid="settings-okignore-add-input"
@@ -708,7 +709,7 @@ function WarningIndicator({ warnings }: { warnings: OkignoreWarning[] }) {
           role="status"
           aria-live="polite"
           aria-label={t`Pattern warnings: ${summary}`}
-          className="flex w-4 shrink-0 cursor-help justify-center text-amber-500"
+          className="flex w-4 shrink-0 cursor-help justify-center text-warning"
           data-testid="settings-okignore-warning-indicator"
           data-warnings={String(warnings.length)}
         >
@@ -732,7 +733,7 @@ function SavedIndicator({ visible }: { visible: boolean }) {
     <span
       role="status"
       aria-live="polite"
-      className="flex w-4 shrink-0 justify-center text-emerald-600"
+      className="flex w-4 shrink-0 justify-center text-success"
       data-testid="settings-okignore-saved-indicator"
     >
       {visible ? (

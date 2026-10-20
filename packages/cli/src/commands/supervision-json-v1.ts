@@ -93,6 +93,7 @@ type V1LockState =
   | 'unverified-owner'
   | 'foreign-host'
   | 'dead-pid'
+  | 'reused-pid'
   | 'alive'
   | 'unknown';
 

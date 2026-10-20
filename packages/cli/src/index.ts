@@ -23,6 +23,7 @@ export { redactContent } from './commands/bug-report-redact.ts';
 export {
   ALL_EDITOR_IDS,
   buildManagedServerEntry,
+  canonicalEntryFor,
   droppedManagedKeys,
   EDITOR_LABELS,
   EDITOR_TARGETS,
@@ -35,6 +36,7 @@ export {
   isOwnManagedEntry,
   type McpInstallOptions,
 } from './commands/editors.ts';
+export { registerWindowsProcessStartReader } from './commands/holder-process-start.ts';
 export {
   classifyExistingMcpEntry,
   detectInstalledEditors,

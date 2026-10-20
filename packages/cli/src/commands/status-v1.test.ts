@@ -204,8 +204,9 @@ describe('status v1 readiness', () => {
 
   test.each([
     ['missing', { status: 'missing', lockPath: lock.lockPath }],
-    ['dead-pid', { ...lock, status: 'dead-pid' }],
-    ['corrupt', { status: 'corrupt', lockPath: lock.lockPath }],
+    ['dead-pid', { ...lock, status: 'dead-pid', text: '' }],
+    ['reused-pid', { ...lock, status: 'reused-pid', text: '' }],
+    ['corrupt', { status: 'corrupt', text: '', lockPath: lock.lockPath }],
     ['read-error', { status: 'read-error', lockPath: lock.lockPath, error: 'EACCES' }],
     ['unverified-owner', { status: 'unverified-owner', lockPath: lock.lockPath, pid: 123 }],
     ['foreign-host', { ...lock, status: 'foreign-host' }],

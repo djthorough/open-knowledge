@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getMachineId } from '@inkeep/open-knowledge-server';
 import { describe, expect, test, vi } from 'vitest';
 import type { LockState } from './lock-state.ts';
 import { runStop } from './stop.ts';
@@ -9,6 +10,13 @@ import { v1ExitCode } from './supervision-json-v1.ts';
 
 const first = '/tmp/ok-stop-v1-a/.ok/local';
 const second = '/tmp/ok-stop-v1-b/.ok/local';
+const verifiedWriter = {
+  isAlive: () => true,
+  readProcessStart: () => ({
+    startedAtMs: Date.parse('2026-01-01T00:00:00Z'),
+    clock: 'creation' as const,
+  }),
+};
 
 function alive(dir: string, pid: number, port: number): LockState {
   return {
@@ -17,7 +25,8 @@ function alive(dir: string, pid: number, port: number): LockState {
     lock: {
       pid,
       port,
-      hostname: 'host',
+      hostname: hostname(),
+      machineId: getMachineId(),
       startedAt: '2026-09-22T00:00:00.000Z',
       worktreeRoot: '/copied',
     },
@@ -57,6 +66,7 @@ describe('stop v1 numeric selection', () => {
     const stop = (deps: Parameters<typeof runStop>[0]) =>
       runStop({
         ...deps,
+        ...verifiedWriter,
         kill: () => {},
         probeClients: async () => (deps.lockDir === second ? 2 : 0),
       });
@@ -103,7 +113,7 @@ describe('stop v1 numeric selection', () => {
 
   test('deduplicates repeated discovery of one normalized lock path', async () => {
     const stop = vi.fn((deps: Parameters<typeof runStop>[0]) =>
-      runStop({ ...deps, kill: () => {}, probeClients: async () => null }),
+      runStop({ ...deps, ...verifiedWriter, kill: () => {}, probeClients: async () => null }),
     );
     const document = await buildStopV1({
       target: '4242',
@@ -121,7 +131,7 @@ describe('stop v1 numeric selection', () => {
 
   test('collapses distinct paths only with matching confirmed identity', async () => {
     const stop = vi.fn((deps: Parameters<typeof runStop>[0]) =>
-      runStop({ ...deps, kill: () => {}, probeClients: async () => null }),
+      runStop({ ...deps, ...verifiedWriter, kill: () => {}, probeClients: async () => null }),
     );
     const document = await buildStopV1({
       target: '4242',
@@ -194,7 +204,8 @@ describe('stop v1 channel policy', () => {
         discover: async () => [first],
         inspect: (dir) => channelLock(dir, 'stable'),
         confirm: async () => null,
-        stop: (deps) => runStop({ ...deps, selfChannel: 'beta', kill, probeClients }),
+        stop: (deps) =>
+          runStop({ ...deps, ...verifiedWriter, selfChannel: 'beta', kill, probeClients }),
       });
       expect(document.result).toMatchObject({ kind: 'refused', code: 'channel-mismatch' });
       expect(v1ExitCode(document.result.kind)).toBe(1);
@@ -214,7 +225,8 @@ describe('stop v1 channel policy', () => {
       force: true,
       projectRoot: '/tmp/ok-stop-v1-a',
       inspect: (dir) => channelLock(dir, 'stable'),
-      stop: (deps) => runStop({ ...deps, selfChannel: 'beta', kill, probeClients }),
+      stop: (deps) =>
+        runStop({ ...deps, ...verifiedWriter, selfChannel: 'beta', kill, probeClients }),
     });
     expect(document.result).toMatchObject({ kind: 'success', code: 'signalled' });
     expect(document.force).toBe(true);
@@ -260,6 +272,7 @@ describe('stop v1 channel policy', () => {
       stop: (deps) =>
         runStop({
           ...deps,
+          ...verifiedWriter,
           selfChannel: 'beta',
           kill,
           probeClients: async () => (codes.some((item) => item === 'clients-connected') ? 2 : 0),
@@ -271,5 +284,79 @@ describe('stop v1 channel policy', () => {
     if (kind === 'partial' || kind === 'error')
       expect(kill).toHaveBeenCalledExactlyOnceWith(101, 'SIGTERM');
     else expect(kill).not.toHaveBeenCalled();
+  });
+});
+
+describe('stop v1 holder identity at the signal', () => {
+  test.each([false, true])('force=%s cannot bypass an unreadable process start', async (force) => {
+    const kill = vi.fn();
+    const document = await buildStopV1({
+      target: undefined,
+      force,
+      projectRoot: '/tmp/ok-stop-v1-a',
+      inspect: (dir) => alive(dir, 101, 4242),
+      stop: (deps) =>
+        runStop({
+          ...deps,
+          isAlive: () => true,
+          readProcessStart: () => null,
+          kill,
+          probeClients: async () => null,
+        }),
+    });
+    expect(document.result).toMatchObject({ kind: 'refused', code: 'ownership-unverified' });
+    expect(document.targets[0]?.detail).toContain('--force does not override');
+    expect(v1ExitCode(document.result.kind)).toBe(1);
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  test.each(['gone', 'replaced'] as const)(
+    'a %s holder is a no-op rather than a successful signal',
+    async (verdict) => {
+      const kill = vi.fn();
+      const document = await buildStopV1({
+        target: undefined,
+        force: true,
+        projectRoot: '/tmp/ok-stop-v1-a',
+        inspect: (dir) => alive(dir, 101, 4242),
+        stop: (deps) =>
+          runStop({
+            ...deps,
+            isAlive: () => verdict !== 'gone',
+            readProcessStart: () => ({
+              startedAtMs: Date.parse('2026-10-01T00:00:00Z'),
+              clock: 'creation',
+            }),
+            kill,
+          }),
+      });
+      expect(document.result).toMatchObject({ kind: 'no-op', code: 'already-stopped' });
+      expect(document.targets[0]?.detail).toBeTruthy();
+      expect(kill).not.toHaveBeenCalled();
+    },
+  );
+
+  test('all combines a signal with an identity refusal as partial', async () => {
+    const kill = vi.fn();
+    const document = await buildStopV1({
+      target: 'all',
+      force: true,
+      projectRoot: null,
+      discover: async () => [second, first],
+      inspect: (dir) => alive(dir, dir === first ? 101 : 102, 4242),
+      stop: (deps) =>
+        runStop({
+          ...deps,
+          ...verifiedWriter,
+          readProcessStart: deps.lockDir === first ? verifiedWriter.readProcessStart : () => null,
+          kill,
+        }),
+    });
+    expect(document.result).toMatchObject({ kind: 'partial', code: 'partially-signalled' });
+    expect(document.targets.map((item) => item.code)).toEqual([
+      'signalled',
+      'ownership-unverified',
+    ]);
+    expect(kill).toHaveBeenCalledExactlyOnceWith(101, 'SIGTERM');
   });
 });

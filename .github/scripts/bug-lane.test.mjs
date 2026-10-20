@@ -5,7 +5,17 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import { gitCleanEnv } from '../../scripts/git-clean-env.mjs';
-import { evaluateBugLane, holdBugLaneBatch, makeIsInStable, readPendingBumps } from './bug-lane.mjs';
+import { configureTestGitRepository } from '../../test-support/configure-git-fixture.test-helper.ts';
+import {
+  evaluateBugLane,
+  holdBugLaneBatch,
+  makeIsInStable,
+  readPendingBumps,
+  screenPicksForReleaseHold,
+  ticketsByRef,
+} from './bug-lane.mjs';
+import { expectNoAutomaticGitMaintenance } from './git-fixture-maintenance.test-helper.mjs';
+import { RELEASE_HOLD_SENTINEL, SHALLOW_BOUNDARY } from './release-hold.mjs';
 
 const FIX_A = 'a'.repeat(40);
 const FIX_B = 'b'.repeat(40);
@@ -181,18 +191,88 @@ describe('holdBugLaneBatch (no batch a point release would refuse)', () => {
   });
 });
 
+describe('screenPicksForReleaseHold (no pick that brings the release hold)', () => {
+  const verdict = (sha, held) => ({ kind: 'pick', candidate: sha, sha: sha.padEnd(40, '0'), firstParent: 'f'.repeat(40), path: RELEASE_HOLD_SENTINEL, held });
+
+  test('keeps a pick that does not add the sentinel and says so', () => {
+    const screened = screenPicksForReleaseHold({ fixRefs: ['aaa'], evaluate: (ref) => verdict(ref, false) });
+    expect(screened.fixRefs).toEqual(['aaa']);
+    expect(screened.log).toEqual([
+      `bug-lane: aaa (aaa000000000) does not add ${RELEASE_HOLD_SENTINEL} against its first parent ffffffffffff, so the release hold does not apply.`,
+    ]);
+  });
+
+  test('drops a pick that adds the sentinel, and one it cannot read, and keeps the rest', () => {
+    const screened = screenPicksForReleaseHold({
+      fixRefs: ['flip', 'clean', 'shallow'],
+      evaluate: (ref) => {
+        if (ref === 'shallow') {
+          throw Object.assign(new Error('names first parent 123, which is not in this clone, as at a shallow boundary'), {
+            code: SHALLOW_BOUNDARY,
+          });
+        }
+        return verdict(ref, ref === 'flip');
+      },
+    });
+    expect(screened.fixRefs).toEqual(['clean']);
+    expect(screened.log[0]).toMatch(/^::warning::bug-lane: holding flip: flip \(flip00000000\) adds /);
+    expect(screened.log[2]).toBe(
+      '::warning::bug-lane: holding shallow this tick, because the release-hold check could not decide: names first parent 123, which is not in this clone, as at a shallow boundary',
+    );
+  });
+
+  test('fails the tick when the check breaks for any other reason, rather than holding every pick quietly', () => {
+    const broken = new Error('git cat-file failed (exit 128): fatal: not a git repository');
+    expect(() =>
+      screenPicksForReleaseHold({
+        fixRefs: ['clean', 'other'],
+        evaluate: (ref) => {
+          if (ref === 'other') throw broken;
+          return verdict(ref, false);
+        },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        cause: broken,
+        message: `the release-hold check failed on other, so this tick hands nothing to verify: ${broken.message}`,
+      }),
+    );
+  });
+
+  test('ticketsByRef lists only the refs that are handed over', () => {
+    const result = {
+      fixRefs: ['a', 'b'],
+      perCommit: [
+        { sha: 'a', qualifies: true, linkedIssues: ['PRD-1'] },
+        { sha: 'b', qualifies: true, linkedIssues: ['PRD-2'] },
+      ],
+    };
+    expect(ticketsByRef(result)).toEqual({ a: ['PRD-1'], b: ['PRD-2'] });
+    expect(ticketsByRef(result, ['b'])).toEqual({ b: ['PRD-2'] });
+  });
+});
+
 describe('makeIsInStable', () => {
   let dir;
   let fixOnMain;
   let laterOnMain;
 
   const git = (...args) =>
-    execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: gitCleanEnv() }).trim();
+    execFileSync('git', args, {
+      cwd: dir,
+      encoding: 'utf8',
+      env: {
+        ...gitCleanEnv(),
+        GIT_TRACE2_EVENT:
+          args[0] === 'init' ? undefined : join(dir, '.git', 'fixture-maintenance.jsonl'),
+      },
+    }).trim();
   const inRepo = (args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8', env: gitCleanEnv() });
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'ok-bug-lane-containment-'));
     git('init', '--initial-branch=main', '--quiet');
+    configureTestGitRepository(dir, (args) => git(...args));
     git('config', 'user.email', 't@t');
     git('config', 'user.name', 't');
     git('config', 'commit.gpgsign', 'false');
@@ -222,6 +302,10 @@ describe('makeIsInStable', () => {
   });
 
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  test('fixture Git operations do not launch automatic maintenance', () => {
+    expect(() => expectNoAutomaticGitMaintenance(dir)).not.toThrow();
+  });
 
   test('the cherry-picked copy on the stable is NOT an ancestor of it', () => {
     expect(git('rev-parse', 'v1.0.0')).not.toBe(fixOnMain);
@@ -285,10 +369,11 @@ describe('the bug-lane entry points the two jobs run', () => {
   const OK_ROOT = join(dirname(SCRIPT), '..', '..');
   const COPIED = [
     '.github/scripts/bug-lane.mjs',
+    '.github/scripts/release-hold.mjs',
     '.github/scripts/select-beta-to-promote.mjs',
     '.github/scripts/shipped-fix-containment.mjs',
     'scripts/compute-stable-version.mjs',
-    'scripts/compute-next-beta.mjs',
+    'scripts/changeset-versions.mjs',
     'scripts/git-clean-env.mjs',
   ];
   const dirs = [];
@@ -305,7 +390,11 @@ describe('the bug-lane entry points the two jobs run', () => {
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], {
       cwd,
       encoding: 'utf8',
-      env: gitCleanEnv(),
+      env: {
+        ...gitCleanEnv(),
+        GIT_TRACE2_EVENT:
+          args[0] === 'init' ? undefined : join(cwd, '.git', 'fixture-maintenance.jsonl'),
+      },
     }).trim();
   const pendingRepo = () => {
     const root = scratch('bug-lane-entry-');
@@ -317,6 +406,7 @@ describe('the bug-lane entry points the two jobs run', () => {
       return git(root, 'rev-parse', 'HEAD');
     };
     git(root, 'init', '-q', '-b', 'main');
+    configureTestGitRepository(root, (args) => git(root, ...args));
     writeFileSync(join(root, 'README.md'), 'stable\n');
     git(root, 'add', '-A');
     git(root, 'commit', '-q', '-m', 'stable');
@@ -379,6 +469,11 @@ describe('the bug-lane entry points the two jobs run', () => {
     });
     return { ...res, output: readFileSync(output, 'utf8') };
   };
+
+  test('fixture Git operations do not launch automatic maintenance', () => {
+    const { root } = pendingRepo();
+    expect(() => expectNoAutomaticGitMaintenance(root)).not.toThrow();
+  });
 
   test('--read-bumps writes the bump of every pending changeset, keyed by blob id', () => {
     const { root, blobs } = pendingRepo();
@@ -465,5 +560,73 @@ describe('the bug-lane entry points the two jobs run', () => {
     expect(res.stdout).toContain(
       '::notice::bug-lane: holding 1 qualifying fix(es) this tick, so no point release is attempted. The newest stable tag v1.0.0 has no published Release',
     );
+  });
+
+  const runWithBugLinks = (root) => {
+    const verdicts = run(SCRIPT, root, { args: ['--read-bumps'] }).output.trim().slice('bump_verdicts='.length);
+    const linear = linearStub();
+    return run(isolatedScript(), root, {
+      env: { LINEAR_API_KEY: 'placeholder-linear-key', LINEAR_CALLS: linear.calls, BUMP_VERDICTS: verdicts },
+      preload: linear.preload,
+    });
+  };
+
+  test('hands over a fix that does not add the release hold, and says the hold does not apply', () => {
+    const { root, fix } = pendingRepo();
+    const res = runWithBugLinks(root);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.output).toBe(`fix_refs=${fix}\nstable=v1.0.0\nfix_tickets={"${fix}":["PRD-1"]}\n`);
+    expect(res.stdout).toContain(
+      `bug-lane: ${fix} (${fix.slice(0, 12)}) does not add ${RELEASE_HOLD_SENTINEL} against its first parent`,
+    );
+  });
+
+  test('leaves out a fix whose own commit adds the release hold, and hands over the post-flip fix after it', () => {
+    const { root, fix } = pendingRepo();
+    mkdirSync(join(root, '.github', 'release-holds'), { recursive: true });
+    writeFileSync(join(root, RELEASE_HOLD_SENTINEL), 'held\n');
+    writeFileSync(join(root, '.changeset', 'flip.md'), '---\n"@inkeep/open-knowledge": patch\n---\n\nflip\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'fix: the commit that brings the hold (#103)');
+    const flip = git(root, 'rev-parse', 'HEAD');
+    writeFileSync(join(root, '.changeset', 'after.md'), '---\n"@inkeep/open-knowledge": patch\n---\n\nafter\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'fix: a post-flip fix (#104)');
+    const after = git(root, 'rev-parse', 'HEAD');
+    const res = runWithBugLinks(root);
+    expect(res.status, res.stderr).toBe(0);
+    const outputs = Object.fromEntries(res.output.trim().split('\n').map((line) => line.split(/=(.*)/s).slice(0, 2)));
+    expect(outputs.fix_refs.split(',').sort()).toEqual([fix, after].sort());
+    expect(outputs.stable).toBe('v1.0.0');
+    expect(JSON.parse(outputs.fix_tickets)).toEqual({ [fix]: ['PRD-1'], [after]: ['PRD-1'] });
+    expect(res.stdout).toContain(`::warning::bug-lane: holding ${flip}: ${flip} (${flip.slice(0, 12)}) adds ${RELEASE_HOLD_SENTINEL}`);
+  });
+
+  test('holds a pick at a shallow boundary, whose first parent is not in the clone', () => {
+    const origin = scratch('bug-lane-shallow-origin-');
+    git(origin, 'init', '-q', '-b', 'main');
+    configureTestGitRepository(origin, (args) => git(origin, ...args));
+    writeFileSync(join(origin, 'README.md'), 'stable\n');
+    git(origin, 'add', '-A');
+    git(origin, 'commit', '-q', '-m', 'stable');
+    git(origin, 'tag', 'v1.0.0');
+    writeFileSync(join(origin, 'notes.txt'), 'between\n');
+    git(origin, 'add', '-A');
+    git(origin, 'commit', '-q', '-m', 'chore: between the stable and the fix');
+    mkdirSync(join(origin, '.changeset'), { recursive: true });
+    writeFileSync(join(origin, '.changeset', 'fix-crash.md'), '---\n"@inkeep/open-knowledge": patch\n---\n\nfix\n');
+    git(origin, 'add', '-A');
+    git(origin, 'commit', '-q', '-m', 'fix: stop the crash (#101)');
+    const fix = git(origin, 'rev-parse', 'HEAD');
+    const clone = scratch('bug-lane-shallow-');
+    git(clone, 'init', '-q', '-b', 'main');
+    configureTestGitRepository(clone, (args) => git(clone, ...args));
+    git(clone, 'fetch', '-q', '--depth', '1', `file://${origin}`, 'refs/heads/main:refs/remotes/origin/main', 'refs/tags/v1.0.0:refs/tags/v1.0.0');
+    git(clone, 'switch', '-q', '-C', 'main', 'origin/main');
+    const res = runWithBugLinks(clone);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.output).toBe('fix_refs=\nstable=v1.0.0\nfix_tickets={}\n');
+    expect(res.stdout).toContain(`::warning::bug-lane: holding ${fix} this tick, because the release-hold check could not decide:`);
+    expect(res.stdout).toContain('as at a shallow boundary');
   });
 });

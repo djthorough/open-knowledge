@@ -82,7 +82,10 @@ export async function observeStatus(deps: ObserveStatusDeps): Promise<StatusObse
     state,
     serverInstanceId: null,
     readiness: {
-      status: state.status === 'missing' || state.status === 'dead-pid' ? 'not-running' : 'unknown',
+      status:
+        state.status === 'missing' || state.status === 'dead-pid' || state.status === 'reused-pid'
+          ? 'not-running'
+          : 'unknown',
       checkedAt: null,
       degraded: [],
     },

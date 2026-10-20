@@ -7,7 +7,7 @@ import {
 } from '@inkeep/open-knowledge-core/handoff';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, ChevronDown, TextQuote, X } from 'lucide-react';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import {
   composeCommentBatchInstruction,
@@ -44,6 +44,7 @@ import { RotatingComposerPlaceholder } from '@/components/RotatingComposerPlaceh
 import { AGENT_CONNECTIONS_SECTION_LABEL } from '@/components/settings/settings-section-labels';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { publishAskComposerHeight } from '@/editor/ask-composer-inset';
 import {
   type ComposerAttachmentDropPolicy,
   ComposerMentionInput,
@@ -95,7 +96,12 @@ import { useWorkspace } from '@/lib/use-workspace';
 import { cn } from '@/lib/utils';
 import { docNameToRelativePath } from '@/lib/workspace-paths';
 import { emitOpenAskAiComposer, subscribeToOpenAskAiComposer } from './ask-ai-composer-events';
-import { clearComposerDraft, getComposerDraft, setComposerDraftDoc } from './composer-draft-store';
+import {
+  clearComposerDraft,
+  getComposerDraft,
+  setComposerDraftDoc,
+  subscribeComposerDraft,
+} from './composer-draft-store';
 import { nextTouchedFiles } from './composer-touched-files';
 import { focusComposerInputOnCardPointer } from './focus-composer-on-card-pointer';
 import { usePageList } from './PageListContext';
@@ -130,6 +136,7 @@ export function BottomComposer({
   docName,
   surface,
   folderPath,
+  editorVisible = true,
   dismissed = false,
   onDismiss,
   onReopen,
@@ -137,6 +144,7 @@ export function BottomComposer({
   docName?: string | null;
   surface?: EditorSurface;
   folderPath?: string;
+  editorVisible?: boolean;
   dismissed?: boolean;
   onDismiss?: () => void;
   onReopen?: () => void;
@@ -164,7 +172,7 @@ export function BottomComposer({
   const cardRef = useRef<HTMLDivElement>(null);
   const clampRef = useRef<(() => void) | null>(null);
 
-  const [initialDraftDoc] = useState(() => getComposerDraft().doc ?? undefined);
+  const { doc: savedDraftDoc } = useSyncExternalStore(subscribeComposerDraft, getComposerDraft);
 
   const {
     pendingAttachments,
@@ -184,7 +192,6 @@ export function BottomComposer({
 
   useEffect(() => {
     if (folderMode || docName == null) return;
-    const root = document.documentElement;
     const followBottom = () => {
       clampRef.current?.();
       if (isScrollRestoreSuppressed(docName)) return;
@@ -234,17 +241,13 @@ export function BottomComposer({
     const card = cardRef.current;
     if (dismissed || !card) {
       followBottom();
-      root.style.removeProperty('--ask-composer-height');
       return () => {
         clampRef.current?.();
       };
     }
     const apply = () => {
       followBottom();
-      root.style.setProperty(
-        '--ask-composer-height',
-        `${card.offsetHeight + ASK_COMPOSER_HEIGHT_RESERVE_PX}px`,
-      );
+      publishAskComposerHeight(card.offsetHeight + ASK_COMPOSER_HEIGHT_RESERVE_PX);
     };
     apply();
     const observer = new ResizeObserver(apply);
@@ -252,11 +255,12 @@ export function BottomComposer({
     return () => {
       observer.disconnect();
       followBottom();
-      root.style.removeProperty('--ask-composer-height');
+      publishAskComposerHeight(null);
     };
   }, [dismissed, docName, folderMode]);
 
   const openAndFocus = useEffectEvent(() => {
+    if (!editorVisible) return;
     if (dismissed) onReopen?.();
     else inputRef.current?.focus();
   });
@@ -264,17 +268,25 @@ export function BottomComposer({
   const readPaintedOver = useEffectEvent(() => ({
     docName: activeDocOrNull,
     effectiveSurface,
+    editorVisible,
   }));
 
+  const arrivalRevealOwedRef = useRef(true);
   useEffect(() => {
-    if (dismissed) return;
+    if (dismissed) {
+      arrivalRevealOwedRef.current = true;
+      return;
+    }
+    if (!editorVisible || !arrivalRevealOwedRef.current) return;
     const arrivedOver = readPaintedOver();
     const arrivedOverDoc = arrivedOver.docName;
     if (arrivedOverDoc == null) return;
     const arrivedOverSurface = arrivedOver.effectiveSurface;
     const frame = requestAnimationFrame(() => {
+      arrivalRevealOwedRef.current = false;
       const paintedOver = readPaintedOver();
       if (
+        !paintedOver.editorVisible ||
         paintedOver.docName !== arrivedOverDoc ||
         paintedOver.effectiveSurface !== arrivedOverSurface
       ) {
@@ -290,7 +302,7 @@ export function BottomComposer({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [dismissed]);
+  }, [dismissed, editorVisible]);
 
   useEffect(() => {
     return subscribeToOpenAskAiComposer(openAndFocus);
@@ -298,6 +310,7 @@ export function BottomComposer({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!readPaintedOver().editorVisible) return;
       if (!matchesKeyboardShortcut(event, 'open-ask-ai')) return;
       if (isOverlayLayerOpen()) return;
       if (isNativeTextControl(event.target)) return;
@@ -861,7 +874,7 @@ export function BottomComposer({
           />
         ) : null}
       </div>
-      <div className="flex items-end gap-2">
+      <div className="flex flex-wrap items-end gap-2">
         <ComposerAddMenu composerRef={inputRef} testId="ask-ai-add-to-prompt" size="icon">
           {attachmentsAccepted ? <ComposerFilesMenuItem onFiles={ingestFiles} /> : null}
           {selectedCommentCount > 0 && !hasQueuedComments ? (
@@ -872,7 +885,7 @@ export function BottomComposer({
           ) : null}
           <ComposerMentionMenuItem onSelect={() => inputRef.current?.openMentionPicker()} />
         </ComposerAddMenu>
-        <div className="relative flex min-h-8 flex-1 flex-col justify-center">
+        <div className="relative flex min-h-8 min-w-24 flex-[1_1_6rem] flex-col justify-center">
           <ComposerMentionInput
             ref={inputRef}
             ariaLabel={t`Ask AI`}
@@ -885,7 +898,7 @@ export function BottomComposer({
             }}
             onMentionsChange={setInlineMentions}
             onSubmit={submit}
-            initialDoc={initialDraftDoc}
+            initialDoc={savedDraftDoc ?? undefined}
             className="max-h-[200px] overflow-y-auto overscroll-contain text-base md:text-sm"
           />
           {}
@@ -899,6 +912,8 @@ export function BottomComposer({
           ) : null}
         </div>
         <AgentSplitButton
+          className="ms-auto max-w-full min-w-0"
+          primaryClassName="h-auto min-h-8 min-w-0 shrink whitespace-normal"
           primary={
             <>
               {isThreadSelected ? (
@@ -912,7 +927,7 @@ export function BottomComposer({
               ) : resolvedTarget ? (
                 <TargetIcon id={resolvedTarget.id} className="size-4" aria-hidden />
               ) : null}
-              <span>
+              <span className="min-w-0 break-words">
                 {isThreadSelected ? (
                   defaultThreadAgent !== null ? (
                     <AskAgentNameLabel agentName={defaultThreadAgent.name} />

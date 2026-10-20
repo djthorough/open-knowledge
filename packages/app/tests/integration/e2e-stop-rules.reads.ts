@@ -1,10 +1,6 @@
 import { TEST_ONLY_SOURCE_SUFFIXES } from '../../../../test-support/test-only-source-file.mjs';
 
-export const E2E_SCAN_ROOTS = [
-  'packages/app/tests/stress',
-  'packages/app/tests/visual',
-  'packages/app/tests/a11y',
-];
+export const E2E_SCAN_ROOTS = ['packages/app/tests/stress', 'packages/app/tests/a11y'];
 export const APP_SOURCE_ROOT = 'packages/app/src';
 export const APP_SOURCE_EXTENSIONS = ['.ts', '.tsx'];
 export const APP_SOURCE_EXCLUDED_SUFFIXES = [...TEST_ONLY_SOURCE_SUFFIXES, '.spec.ts', '.spec.tsx'];
@@ -18,6 +14,8 @@ export const ROUND_READS = {
     ...APP_SOURCE_EXTENSIONS.map((extension) => `${APP_SOURCE_ROOT}/**/*${extension}`),
     APP_STYLESHEET,
     'packages/app/package.json',
+    'packages/app/tests/integration/dev-gate-allowlist.ts',
+    'test-support/test-only-source-file.mjs',
   ],
   exclude: APP_SOURCE_EXCLUDED_SUFFIXES.map((suffix) => `${APP_SOURCE_ROOT}/**/*${suffix}`),
 };

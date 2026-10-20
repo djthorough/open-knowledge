@@ -76,12 +76,14 @@ describe('v1 lock projection', () => {
   test.each([
     ['alive', true],
     ['dead-pid', false],
+    ['reused-pid', false],
     ['foreign-host', null],
   ] as const)(
     '%s keeps the classified liveness without trusting optional fields',
     (status, alive) => {
       const state = {
         status,
+        text: '',
         lockPath,
         lock: {
           pid: 1234,
@@ -113,7 +115,7 @@ describe('v1 lock projection', () => {
     const states: LockState[] = [
       { status: 'unverified-owner', lockPath, pid: 1234 },
       { status: 'missing', lockPath },
-      { status: 'corrupt', lockPath },
+      { status: 'corrupt', text: '', lockPath },
       { status: 'read-error', lockPath, error: 'permission denied' },
     ];
     const projected = states.map(projectV1LockState);

@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vitest';
 import { computeStablePromotion, withBumpVerdicts } from '../../scripts/compute-stable-version.mjs';
 import { gitCleanEnv } from '../../scripts/git-clean-env.mjs';
+import { configureTestGitRepository } from '../../test-support/configure-git-fixture.test-helper.ts';
+import { expectNoAutomaticGitMaintenance } from './git-fixture-maintenance.test-helper.mjs';
 import {
   evaluateFastTier,
   makeResolveChangesetPrUrl,
@@ -14,9 +16,11 @@ import {
   parseBetaTags,
   readUnshippedBumps,
   resolveTier,
+  screenReleaseHold,
   screenShippedFixes,
   selectPromotion,
 } from './select-beta-to-promote.mjs';
+import { RELEASE_HOLD_SENTINEL } from './release-hold.mjs';
 
 const NOW = Date.parse('2026-07-08T20:00:00Z');
 const SOAK = 86400;
@@ -580,9 +584,19 @@ function makeRepoWithChangesets(commits) {
         'commit.gpgsign=false',
         ...args,
       ],
-      { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitCleanEnv() },
+      {
+        cwd: dir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...gitCleanEnv(),
+          GIT_TRACE2_EVENT:
+            args[0] === 'init' ? undefined : join(dir, '.git', 'fixture-maintenance.jsonl'),
+        },
+      },
     );
   git('init', '--quiet', '--initial-branch=main');
+  configureTestGitRepository(dir, (args) => git(...args));
   execFileSync('mkdir', ['-p', join(dir, '.changeset')]);
   for (const { id, subject } of commits) {
     writeFileSync(
@@ -594,6 +608,60 @@ function makeRepoWithChangesets(commits) {
   }
   return dir;
 }
+
+test('changeset fixture Git operations do not launch automatic maintenance', () => {
+  const repository = makeRepoWithChangesets([{ id: 'fix', subject: 'fix: fixture' }]);
+  expect(() => expectNoAutomaticGitMaintenance(repository)).not.toThrow();
+});
+
+describe('screenReleaseHold (no dispatch of a beta that carries the release hold)', () => {
+  const verdict = (tag, held) => ({ kind: 'tree', candidate: `refs/tags/${tag}`, sha: 'b'.repeat(40), path: RELEASE_HOLD_SENTINEL, held });
+  const screen = (verdicts, { target = 'v1.1.0-beta.0', fastTierCandidate = '' } = {}) => {
+    const lines = [];
+    const result = screenReleaseHold({
+      target,
+      fastTierCandidate,
+      evaluate: (tag) => {
+        const held = verdicts[tag];
+        if (held instanceof Error) throw held;
+        return verdict(tag, held);
+      },
+      log: (line) => lines.push(line),
+    });
+    return { result, lines };
+  };
+
+  test('a 24h selection without the sentinel is dispatched, and the log says the hold does not apply', () => {
+    const { result, lines } = screen({ 'v1.1.0-beta.0': false });
+    expect(result).toEqual({ target: 'v1.1.0-beta.0', fastTierCandidate: '' });
+    expect(lines).toEqual([
+      `v1.1.0-beta.0 (bbbbbbbbbbbb) does not carry ${RELEASE_HOLD_SENTINEL}, so the release hold does not apply.`,
+    ]);
+  });
+
+  test('a 24h selection that carries the sentinel is not dispatched', () => {
+    const { result, lines } = screen({ 'v1.1.0-beta.0': true });
+    expect(result.target).toBe('');
+    expect(lines[0]).toMatch(/^::warning::Not dispatching v1\.1\.0-beta\.0: v1\.1\.0-beta\.0 \(bbbbbbbbbbbb\) carries /);
+  });
+
+  test('a 24h selection it cannot read fails the tick', () => {
+    expect(() => screen({ 'v1.1.0-beta.0': new Error('git ls-tree failed') })).toThrow('git ls-tree failed');
+  });
+
+  test('a fast-tier candidate that carries the sentinel, or that it cannot read, is not smoked', () => {
+    expect(screen({ 'v1.1.0-beta.1': true }, { target: '', fastTierCandidate: 'v1.1.0-beta.1' }).result).toEqual({
+      target: '',
+      fastTierCandidate: '',
+    });
+    const unreadable = screen({ 'v1.1.0-beta.1': new Error('boom') }, { target: '', fastTierCandidate: 'v1.1.0-beta.1' });
+    expect(unreadable.result.fastTierCandidate).toBe('');
+    expect(unreadable.lines[0]).toContain('the release-hold check could not decide (boom)');
+    expect(screen({ 'v1.1.0-beta.1': false }, { target: '', fastTierCandidate: 'v1.1.0-beta.1' }).result.fastTierCandidate).toBe(
+      'v1.1.0-beta.1',
+    );
+  });
+});
 
 describe('screenShippedFixes (no dispatch promote-stable would refuse)', () => {
   const refused = (candidate) => ({
@@ -945,10 +1013,11 @@ describe('the selector entry points the two jobs run', () => {
   const SCRIPT = realpathSync(fileURLToPath(new URL('./select-beta-to-promote.mjs', import.meta.url)));
   const OK_ROOT = join(dirname(SCRIPT), '..', '..');
   const COPIED = [
+    '.github/scripts/release-hold.mjs',
     '.github/scripts/select-beta-to-promote.mjs',
     '.github/scripts/shipped-fix-containment.mjs',
     'scripts/compute-stable-version.mjs',
-    'scripts/compute-next-beta.mjs',
+    'scripts/changeset-versions.mjs',
     'scripts/git-clean-env.mjs',
   ];
   const dirs = [];
@@ -972,7 +1041,11 @@ describe('the selector entry points the two jobs run', () => {
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], {
       cwd,
       encoding: 'utf8',
-      env: gitCleanEnv(),
+      env: {
+        ...gitCleanEnv(),
+        GIT_TRACE2_EVENT:
+          args[0] === 'init' ? undefined : join(cwd, '.git', 'fixture-maintenance.jsonl'),
+      },
     }).trim();
   const betaRepo = () => {
     const root = scratch('select-beta-entry-');
@@ -984,6 +1057,7 @@ describe('the selector entry points the two jobs run', () => {
       git(root, 'tag', tag);
     };
     git(root, 'init', '-q', '-b', 'main');
+    configureTestGitRepository(root, (args) => git(root, ...args));
     commit('keep', 'patch', 'chore: the shipped change (#100)', 'v1.0.0');
     commit('fix-crash', 'patch', 'fix: stop the crash (#201)', 'v1.0.1-beta.0');
     commit('new-thing', 'minor', 'feat: a new thing (#202)', 'v1.1.0-beta.0');
@@ -1062,6 +1136,11 @@ describe('the selector entry points the two jobs run', () => {
   const readBumps = (root) =>
     run(SCRIPT, root, { args: ['--read-bumps'], bin: ghBin('#!/bin/sh\necho "the reader job must not call gh" >&2\nexit 97\n') });
 
+  test('fixture Git operations do not launch automatic maintenance', () => {
+    const { root } = betaRepo();
+    expect(() => expectNoAutomaticGitMaintenance(root)).not.toThrow();
+  });
+
   test('--read-bumps writes the bump of every changeset an unshipped beta adds, keyed by blob id, without gh', () => {
     const { root, blobs } = betaRepo();
     const res = readBumps(root);
@@ -1128,6 +1207,70 @@ describe('the selector entry points the two jobs run', () => {
     expect(res.status).toBe(1);
     expect(res.stderr).toMatch(/BUMP_VERDICTS is empty: the read-bumps job wrote no bump_verdicts output/);
     expect(res.output).toBe('');
+  });
+
+  test('inside the window it dispatches a soaked beta without the release hold, and says the hold is not in force', () => {
+    const { root } = betaRepo();
+    const verdicts = readBumps(root).output.trim().slice('bump_verdicts='.length);
+    const bin = releaseGh({ ages: { 'v1.1.0-beta.0': 10, 'v1.0.1-beta.0': 60 * 25 } });
+    const res = run(isolatedScript(), root, {
+      env: { BUMP_VERDICTS: verdicts, SOAK_SECONDS: '86400', FAST_TIER_ARMED: 'false', DISPATCH_WINDOW_OPEN: 'true' },
+      bin,
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.output).toContain('target=v1.0.1-beta.0\ntier=soak\n');
+    expect(res.stdout).toContain(`Release hold not in force: HEAD does not carry ${RELEASE_HOLD_SENTINEL}.`);
+    expect(res.stdout).toContain(
+      `v1.0.1-beta.0 (${git(root, 'rev-parse', 'v1.0.1-beta.0^{commit}').slice(0, 12)}) does not carry ${RELEASE_HOLD_SENTINEL}, so the release hold does not apply.`,
+    );
+  });
+
+  test('it does not dispatch a soaked beta that carries the release hold, and says the hold is in force', () => {
+    const { root } = betaRepo();
+    mkdirSync(join(root, '.github', 'release-holds'), { recursive: true });
+    writeFileSync(join(root, RELEASE_HOLD_SENTINEL), 'held\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'feat: boot only the converged host (#203)');
+    git(root, 'tag', 'v1.1.0-beta.1');
+    const verdicts = readBumps(root).output.trim().slice('bump_verdicts='.length);
+    const bin = releaseGh({ ages: { 'v1.1.0-beta.1': 60 * 25, 'v1.1.0-beta.0': 60 * 26, 'v1.0.1-beta.0': 60 * 27 } });
+    const res = run(isolatedScript(), root, {
+      env: { BUMP_VERDICTS: verdicts, SOAK_SECONDS: '86400', FAST_TIER_ARMED: 'false', DISPATCH_WINDOW_OPEN: 'true' },
+      bin,
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.output).toContain('target=\ntier=\n');
+    expect(res.stdout).toContain(`::notice::Release hold in force: HEAD carries ${RELEASE_HOLD_SENTINEL}`);
+    expect(res.stdout).toMatch(/::warning::Not dispatching v1\.1\.0-beta\.1: v1\.1\.0-beta\.1 \([0-9a-f]{12}\) carries /);
+  });
+
+  test('it does not nominate a fast-tier candidate that carries the release hold for the smoke', () => {
+    const root = scratch('select-beta-entry-held-fast-');
+    git(root, 'init', '-q', '-b', 'main');
+    configureTestGitRepository(root, (args) => git(root, ...args));
+    mkdirSync(join(root, '.changeset'), { recursive: true });
+    writeFileSync(join(root, '.changeset', 'keep.md'), '---\n"@inkeep/open-knowledge": patch\n---\n\nkeep\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'chore: the shipped change (#100)');
+    git(root, 'tag', 'v1.0.0');
+    writeFileSync(join(root, '.changeset', 'fix-crash.md'), '---\n"@inkeep/open-knowledge": patch\n---\n\nfix-crash\n');
+    mkdirSync(join(root, '.github', 'release-holds'), { recursive: true });
+    writeFileSync(join(root, RELEASE_HOLD_SENTINEL), 'held\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'fix: stop the crash (#201)');
+    git(root, 'tag', 'v1.0.1-beta.0');
+    const verdicts = readBumps(root).output.trim().slice('bump_verdicts='.length);
+    const linear = linearStub();
+    const res = run(isolatedScript(), root, {
+      env: { LINEAR_API_KEY: 'placeholder-linear-key', LINEAR_CALLS: linear.calls, BUMP_VERDICTS: verdicts, FAST_TIER_ARMED: 'true', SOAK_SECONDS: '86400' },
+      bin: releaseGh({ ages: { 'v1.0.1-beta.0': 120 } }),
+      preload: linear.preload,
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.output).toContain('fast_tier_candidate=\nsoak_tier=fast\n');
+    expect(res.output).toContain('fast_candidate=v1.0.1-beta.0\nfast_qualifies=true\n');
+    expect(res.stdout).toMatch(/::warning::Fast tier REFUSED for v1\.0\.1-beta\.0: v1\.0\.1-beta\.0 \([0-9a-f]{12}\) carries /);
+    expect(res.stdout).not.toContain('Fast tier: nominating');
   });
 
   test('inside the window it does not dispatch a soaked beta that lacks a fix a published stable shipped', () => {

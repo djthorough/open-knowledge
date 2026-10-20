@@ -1,4 +1,5 @@
 export type { Principal } from '@inkeep/open-knowledge-core';
+export { TEST_LOOP_CORE_MARKER } from '@inkeep/open-knowledge-core';
 export {
   GitDirAccessError,
   MalformedGitPointerError,
@@ -380,7 +381,7 @@ export {
   type PinoLoggerConfig,
 } from './logger.ts';
 export { isAllowedWorkspaceHostHeader, isLoopbackAddress } from './loopback.ts';
-export { getMachineId } from './machine-id.ts';
+export { getMachineId, machineIdFilePath } from './machine-id.ts';
 export {
   type RenameRewriteResult,
   rewriteMarkdownLinksForDocumentRename,
@@ -425,9 +426,9 @@ export {
   resetMetrics,
 } from './metrics.ts';
 export {
-  MISSING_OK_CONFIG_MESSAGE,
   MissingOkConfigError,
   type MissingOkConfigKind,
+  missingOkConfigMessage,
 } from './missing-ok-config-error.ts';
 export {
   createPersistenceExtension,
@@ -437,17 +438,41 @@ export {
 export { loadPrincipal } from './principal.ts';
 export { isProcessAlive, isValidLockPid } from './process-alive.ts';
 export {
+  assessLockHolder,
+  classifyLockHolder,
+  isLockFromThisMachine,
+  type LockHolderAssessment,
+  type LockHolderIdentity,
+  type LockHolderVerdict,
+  type LockOwnerFields,
+  type ProcessStart,
+  type ProcessStartCause,
+  type ProcessStartReader,
+  type ProcessStartToken,
+  parseProcessStartToken,
+  processStartToken,
+  readProcessStart,
+  recordsLockOwner,
+  registerNativeProcessStartReader,
+  type UnverifiedLockHolderCause,
+} from './process-identity.ts';
+export {
   acquireProcessLock,
+  LOCK_FILE_ACCESS_REMEDY,
   type LockName,
+  type LockRemoval,
   lockBaseUrl,
   lockFilePath,
   ProcessLockCollisionError,
+  ProcessLockFileError,
   type ProcessLockHandle,
   type ProcessLockMetadata,
   type ReadProcessLockResult,
   readProcessLock,
   readProcessLockDetailed,
   releaseProcessLock,
+  removeLockIfUnchanged,
+  toProcessLockMetadata,
   updateProcessLockPort,
 } from './process-lock.ts';
 export {
@@ -684,6 +709,7 @@ export {
   spansCurrentPath,
   spansPreviousPath,
 } from './telemetry-file-sink.ts';
+export { TEST_LOOP_SERVER_MARKER } from './test-loop-marker.ts';
 export {
   initToleranceTelemetryWriter,
   isToleranceTelemetryEnabled,

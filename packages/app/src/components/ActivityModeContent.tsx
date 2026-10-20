@@ -74,7 +74,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }):
         <p className="text-xs text-muted-foreground">{error}</p>
       </div>
       <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-        <Trans>Retry</Trans>
+        <Trans>Try again</Trans>
       </Button>
     </div>
   );
@@ -297,8 +297,10 @@ function ActivityModeBody({
 
 export function ActivityModeContent({
   showBackButton = true,
+  onDestinationRequested,
 }: {
   showBackButton?: boolean;
+  onDestinationRequested?: (docName: string) => void;
 } = {}): React.JSX.Element {
   const { t } = useLingui();
   const { docPanelAgentId, closeActivityPanel } = useDocumentContext();
@@ -318,6 +320,7 @@ export function ActivityModeContent({
   }
 
   const onNavigate = (docName: string): void => {
+    onDestinationRequested?.(docName);
     openTargetTransition(
       withLargeFileOpenGuard({ kind: 'doc', target: docName, docName }, pageMeta),
       { disposition: 'permanent', consumeActiveNewTab: true },

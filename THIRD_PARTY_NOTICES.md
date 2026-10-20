@@ -6689,12 +6689,12 @@ Copyright (c) 1991 - 1995, Stichting Mathematisch Centrum Amsterdam,
 
 The packages below are authored and published by Inkeep and are licensed under GPL-3.0-or-later, the same license as OpenKnowledge itself (see the repository LICENSE for the full text). They are listed for completeness; they are not third-party material.
 
-### `@visimer/core@0.1.0`
+### `@visimer/core@1.1.3`
 Homepage: https://github.com/inkeep/visimer#readme
 
 Copyright (c) 2026 Inkeep
 
-### `@visimer/dom@0.1.0`
+### `@visimer/dom@1.1.3`
 Homepage: https://github.com/inkeep/visimer#readme
 
 Copyright (c) 2026 Inkeep
@@ -6715,6 +6715,7 @@ The following MIT-licensed packages are patched in this repository via pnpm's `p
 | `@tiptap/extension-drag-handle@3.22.3` | `patches/@tiptap%2Fextension-drag-handle@3.22.3.patch` |
 | `@tiptap/y-tiptap@3.0.3` | `patches/@tiptap%2Fy-tiptap@3.0.3.patch` |
 | `@xterm/xterm@6.0.0` | `patches/@xterm%2Fxterm@6.0.0.patch` |
+| `cmdk@1.1.1` | `patches/cmdk@1.1.1.patch` |
 | `react-medium-image-zoom@5.4.3` | `patches/react-medium-image-zoom@5.4.3.patch` |
 | `react-resizable-panels@4.12.1` | `patches/react-resizable-panels@4.12.1.patch` |
 | `y-indexeddb@9.0.12` | `patches/y-indexeddb@9.0.12.patch` |

@@ -1,4 +1,8 @@
-import { formatRelativeAge, RELATIVE_TIME_UNKNOWN } from '@inkeep/open-knowledge-core';
+import {
+  currentCliCommandName,
+  formatRelativeAge,
+  RELATIVE_TIME_UNKNOWN,
+} from '@inkeep/open-knowledge-core';
 import { lockAdvertisesUi } from '@inkeep/open-knowledge-server';
 import { Command } from 'commander';
 import pc from 'picocolors';
@@ -128,6 +132,7 @@ function displayStatus(entry: PsEntry): DisplayStatus {
     case 'foreign-host':
       return entry.isDesktop ? 'desktop' : 'foreign';
     case 'dead-pid':
+    case 'reused-pid':
       return 'stale';
     default: {
       const exhaustive: never = serverStatus;
@@ -232,7 +237,7 @@ export function renderTable(entries: PsEntry[]): string {
     return cols.join('  ').trimEnd();
   });
 
-  const hint = pc.dim('To stop a server: ok stop <port|pid|directory|all>');
+  const hint = pc.dim(`To stop a server: ${currentCliCommandName()} stop <port|pid|directory|all>`);
   return [headerLine, ...dataLines, '', hint].join('\n');
 }
 
@@ -262,14 +267,16 @@ export async function runPs(deps: RunPsDeps = {}): Promise<void> {
       serverState.status === 'missing' ||
       serverState.status === 'corrupt' ||
       serverState.status === 'read-error' ||
-      serverState.status === 'unverified-owner'
+      serverState.status === 'unverified-owner' ||
+      serverState.status === 'reused-pid'
         ? null
         : resolveCommand(serverState.lock.pid);
     const serverUsage =
       serverState.status === 'missing' ||
       serverState.status === 'corrupt' ||
       serverState.status === 'read-error' ||
-      serverState.status === 'unverified-owner'
+      serverState.status === 'unverified-owner' ||
+      serverState.status === 'reused-pid'
         ? null
         : resolveUsage(serverState.lock.pid);
     const entry = buildEntry(lockDir, serverState, command, serverUsage);
@@ -299,7 +306,7 @@ export function psCommand(
     .addFormatOption(
       new Command('ps')
         .description('List all running open-knowledge servers')
-        .argument('[modifier]', '"all" to include stale (dead-pid) entries')
+        .argument('[modifier]', '"all" to include stale entries')
         .option('--all', 'Include stale entries (foreign and unverified entries already show)')
         .option('--json', 'Emit structured JSON (always includes all statuses)'),
       true,

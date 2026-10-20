@@ -63,15 +63,16 @@ describe('ps v1 inventory', () => {
   });
 
   test('keeps each classification, deduplicates only equal paths, and sorts by path', async () => {
-    const dirs = ['z', 'a', 'b', 'c', 'd', 'e', 'f'].map((name) => `/tmp/${name}/.ok/local`);
+    const dirs = ['z', 'a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => `/tmp/${name}/.ok/local`);
     const states: LockState[] = [
       complete,
-      { ...complete, status: 'dead-pid' },
+      { ...complete, status: 'dead-pid', text: '' },
       { ...complete, status: 'foreign-host' },
       { status: 'unverified-owner', lockPath: '', pid: 123 },
-      { status: 'corrupt', lockPath: '' },
+      { status: 'corrupt', text: '', lockPath: '' },
       { status: 'read-error', lockPath: '', error: 'EACCES' },
       { status: 'missing', lockPath: '' },
+      { ...complete, status: 'reused-pid', text: '' },
     ];
     const inspect = vi.fn((dir: string) => {
       const index = dirs.indexOf(dir);
@@ -85,12 +86,13 @@ describe('ps v1 inventory', () => {
       'corrupt',
       'read-error',
       'missing',
+      'reused-pid',
       'alive',
     ]);
     expect(document.servers.map((entry) => entry.lock.path)).toEqual(
       document.servers.map((entry) => entry.lock.path).sort(),
     );
-    expect(inspect).toHaveBeenCalledTimes(7);
+    expect(inspect).toHaveBeenCalledTimes(dirs.length);
     expect(document.servers[2]).toMatchObject({ process: { pid: 123, port: null }, alive: null });
     expect(document.servers[3]).toMatchObject({ process: null, alive: null });
   });

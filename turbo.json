@@ -41,6 +41,7 @@
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
+        "OK_CHANNEL",
         "OK_INSTANCE",
         "OK_AUTO_INSTANCE",
         "OK_DEV_PROTOCOL",
@@ -105,8 +106,10 @@
         "GITHUB_SHA",
         "VERCEL_ENV",
         "OK_ALLOW_BLOGLESS_LLMS_TXT",
+        "OK_ALLOW_PARTIAL_CHANGELOG",
         "CI",
-        "VERCEL"
+        "VERCEL",
+        "VERCEL_DEPLOYMENT_ID"
       ]
     },
     "test": {
@@ -139,6 +142,54 @@
       ],
       "outputs": ["test-results/vitest-test.json", "test-results/vitest-test.provenance.json"]
     },
+    "@inkeep/open-knowledge-server#test:shard1": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!CHANGELOG.md",
+        "!README.md",
+        "../../test-support/*.ts",
+        "../../test-support/test-only-source-file.mjs",
+        "../app/src/editor/observers.ts"
+      ],
+      "outputs": [
+        "test-results/vitest-test-shard1.json",
+        "test-results/vitest-test-shard1.provenance.json"
+      ]
+    },
+    "@inkeep/open-knowledge-server#test:shard2": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!CHANGELOG.md",
+        "!README.md",
+        "../../test-support/*.ts",
+        "../../test-support/test-only-source-file.mjs",
+        "../app/src/editor/observers.ts"
+      ],
+      "outputs": [
+        "test-results/vitest-test-shard2.json",
+        "test-results/vitest-test-shard2.provenance.json"
+      ]
+    },
+    "@inkeep/open-knowledge-server#test:shard3": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!CHANGELOG.md",
+        "!README.md",
+        "../../test-support/*.ts",
+        "../../test-support/test-only-source-file.mjs",
+        "../app/src/editor/observers.ts"
+      ],
+      "outputs": [
+        "test-results/vitest-test-shard3.json",
+        "test-results/vitest-test-shard3.provenance.json"
+      ]
+    },
     "@inkeep/open-knowledge#test": {
       "dependsOn": ["^build", "build"],
       "cache": true,
@@ -164,10 +215,12 @@
         "../../scripts/lume-qa/**",
         "../app/vite.*.ts",
         "../app/lingui.config.ts",
+        "../app/scripts/compile-i18n-catalogs.ts",
         "../app/postcss.config.ts",
         "../app/*.html",
         "../app/src/**",
-        "!../app/src/**/*.md"
+        "!../app/src/**/*.md",
+        "!../app/src/locales/*/messages.json"
       ],
       "outputs": ["test-results/vitest-test.json", "test-results/vitest-test.provenance.json"]
     },
@@ -281,6 +334,57 @@
         "test-results/vitest-test-integration-shard3.provenance.json"
       ]
     },
+    "test:integration:shard4": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/test-support/**",
+        "../server/src/**/*.ts",
+        "../core/src/**/*.ts",
+        "$TURBO_ROOT$/lint-plugins/no-comments/**",
+        "$TURBO_ROOT$/packages/cli/src/**",
+        "$TURBO_ROOT$/packages/cli/package.json"
+      ],
+      "outputs": [
+        "test-results/vitest-test-integration-shard4.json",
+        "test-results/vitest-test-integration-shard4.provenance.json"
+      ]
+    },
+    "test:integration:shard5": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/test-support/**",
+        "../server/src/**/*.ts",
+        "../core/src/**/*.ts",
+        "$TURBO_ROOT$/lint-plugins/no-comments/**",
+        "$TURBO_ROOT$/packages/cli/src/**",
+        "$TURBO_ROOT$/packages/cli/package.json"
+      ],
+      "outputs": [
+        "test-results/vitest-test-integration-shard5.json",
+        "test-results/vitest-test-integration-shard5.provenance.json"
+      ]
+    },
+    "test:integration:shard6": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/test-support/**",
+        "../server/src/**/*.ts",
+        "../core/src/**/*.ts",
+        "$TURBO_ROOT$/lint-plugins/no-comments/**",
+        "$TURBO_ROOT$/packages/cli/src/**",
+        "$TURBO_ROOT$/packages/cli/package.json"
+      ],
+      "outputs": [
+        "test-results/vitest-test-integration-shard6.json",
+        "test-results/vitest-test-integration-shard6.provenance.json"
+      ]
+    },
     "test:conversion": {
       "dependsOn": ["^build"],
       "cache": true,
@@ -297,15 +401,13 @@
     },
     "test:e2e": {
       "dependsOn": ["^build", "build"],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["OK_TEST_E2E_SERVING", "OK_E2E_COVERAGE_DIR"]
     },
-    "test:visual": {
-      "dependsOn": ["^build"],
-      "cache": false
-    },
-    "@inkeep/open-knowledge-app#test:visual": {
-      "dependsOn": ["^build", "build"],
-      "cache": false
+    "@inkeep/open-knowledge-app#test:e2e": {
+      "dependsOn": ["^build", "build", "@inkeep/open-knowledge#build"],
+      "cache": false,
+      "passThroughEnv": ["OK_TEST_E2E_SERVING", "OK_E2E_COVERAGE_DIR"]
     },
     "test:perf": {
       "dependsOn": [],
@@ -324,11 +426,13 @@
     },
     "test:a11y": {
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["OK_TEST_E2E_SERVING"]
     },
     "@inkeep/open-knowledge-app#test:a11y": {
       "dependsOn": ["^build", "build"],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["OK_TEST_E2E_SERVING"]
     },
     "test:perf:bench": {
       "dependsOn": [],

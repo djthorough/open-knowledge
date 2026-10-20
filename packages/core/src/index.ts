@@ -398,7 +398,16 @@ export {
   stripMdExt,
   templateContentDocName,
 } from './constants/cc1.ts';
-export { CHROME_BG_DARK, CHROME_BG_LIGHT } from './constants/chrome.ts';
+export {
+  APP_HEADER_HEIGHT,
+  APP_HEADER_HEIGHT_PX,
+  CHROME_BG_DARK,
+  CHROME_BG_LIGHT,
+  REDUCED_CHROME_HEADER_HEIGHT,
+  REDUCED_CHROME_HEADER_HEIGHT_PX,
+  SIDEBAR_BG_DARK,
+  SIDEBAR_BG_LIGHT,
+} from './constants/chrome.ts';
 export {
   CODE_FILE_BARE_NAMES_TO_LANGUAGE,
   CODE_FILE_EXTENSIONS_TO_LANGUAGE,
@@ -558,16 +567,31 @@ export {
   type PreviewThemeToken,
 } from './constants/preview-theme-tokens.ts';
 export {
+  CHECKOUT_CLI_COMMAND,
+  currentCliCommandName,
   currentDesktopProduct,
   currentMcpServerName,
   DESKTOP_PRODUCTS,
+  DEV_CHANNEL,
+  DEV_FALLBACK_CLI_REFUSAL,
   type DesktopProduct,
   type DesktopProductName,
+  defaultToDevChannel,
   desktopChannelLabel,
   desktopWindowsExecutableName,
   desktopWindowsInstallDirNames,
+  envWithoutDevChannel,
+  type HostCliInvocation,
+  isDevChannel,
   OK_CHANNEL_ENV,
+  OkCliCommand,
+  type OkCliRefusal,
+  type OkCliRunnerInvocation,
+  type OkCliSpawn,
+  PACKAGED_DESKTOP_PRODUCT_NAMES,
+  type PackagedDesktopProductName,
   PRODUCT_NAME,
+  type ResolveOkCliCommandInput,
   resolveDesktopProductName,
 } from './constants/product.ts';
 export { isReservedLogDoc } from './constants/reserved-docs.ts';
@@ -732,7 +756,6 @@ export {
   FrontmatterDeltaSchema,
   type PropertyChange,
 } from './frontmatter-diff.ts';
-export { parseBranchList } from './git/branch-list-parser.ts';
 export {
   agentToolDirs,
   augmentAgentSpawnPath,
@@ -777,13 +800,13 @@ export {
   type AssembleHandoffPromptInput,
   assembleHandoffPrompt,
   assertNeverUrnIpcLookup,
-  buildClaudeLaunchCommand,
+  BRACKETED_PASTE_ENABLE_MARKER,
   buildClaudeUrl,
-  buildCliLaunchArgString,
-  buildCliLaunchCommand,
   buildCodexUrl,
   buildCursorUrl,
+  buildPosixCliLaunch,
   buildStartupInjectionBytes,
+  buildTerminalInputBytes,
   buildWindowsCliLaunch,
   type ComposeSelection,
   type CreateScenario,
@@ -801,6 +824,7 @@ export {
   composeThreadBareLaunchPrompt,
   composeWindowsShellLaunchArgs,
   type DocContext,
+  fishSingleQuote,
   type HandoffFailureReason,
   type HandoffOutcome,
   type HandoffPayload,
@@ -1287,6 +1311,7 @@ export {
   CreatePageRequestSchema,
   type CreatePageSuccess,
   CreatePageSuccessSchema,
+  canonicalTemplateName,
   classifyGitAuthError,
   classifySemanticProviderError,
   containsXmlTag,
@@ -1347,6 +1372,7 @@ export {
   FrontmatterPatchRequestSchema,
   type FrontmatterPatchSuccess,
   FrontmatterPatchSuccessSchema,
+  findTemplateByName,
   GIT_STATUS_CODES,
   type GitAuthFailureSubclass,
   type GitHubReferencePreview,
@@ -1784,6 +1810,7 @@ export {
   type TagsListSuccess,
   TagsListSuccessSchema,
   TEMPLATE_NAME_REGEX,
+  TEMPLATE_NAME_RULE,
   type TemplateDeleteSuccess,
   TemplateDeleteSuccessSchema,
   type TemplateFrontmatter,
@@ -1821,6 +1848,7 @@ export {
   TrashCleanupRequestSchema,
   type TrashCleanupSuccess,
   TrashCleanupSuccessSchema,
+  templateRenameTarget,
   UNREADABLE_WARNINGS_TEXT,
   type UploadAssetSuccess,
   UploadAssetSuccessSchema,
@@ -2019,6 +2047,7 @@ export {
   TERMINAL_PLACEMENTS,
   type TerminalPlacement,
 } from './terminal-layout.ts';
+export { TEST_LOOP_CORE_MARKER } from './test-loop-marker.ts';
 export type {
   AnsiSlotName,
   Base16Palette,
@@ -2109,6 +2138,7 @@ export { isEmbedUrlRewritable, rewriteEmbedUrl } from './utils/embed-url-rewrite
 export { extensionOf } from './utils/extension.ts';
 export { formatFileSize } from './utils/file-size.ts';
 export { getGitHubStars } from './utils/github-stars.ts';
+export { graphemePrefix, graphemeSuffix } from './utils/grapheme-clip.ts';
 export { scanHeadingLine } from './utils/heading-scan.ts';
 export {
   AGENT_COLORS,

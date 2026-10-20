@@ -1,3 +1,4 @@
+// oxlint-disable ok/no-raw-error-toast -- pre-rule backlog: toasts here show raw error text; delete this line once the file maps each failure to written copy. See https://github.com/inkeep/open-knowledge/blob/main/lint-plugins/ok-rules/README.md#no-raw-error-toast
 // oxlint-disable ok/no-raw-html-interactive-element -- matches sibling OutlinePanel — positional list of <button> rows awaiting a shared shadcn list primitive; tracked at https://github.com/inkeep/open-knowledge/blob/main/lint-plugins/ok-rules/README.md#no-raw-html-interactive-element
 // oxlint-disable ok/no-physical-direction-utility -- pre-rule backlog — physical margin/padding/inset utilities predate the rule; drain by swapping ml/mr → ms/me, pl/pr → ps/pe, left/right → start/end, then deleting this line. See https://github.com/inkeep/open-knowledge/blob/main/lint-plugins/ok-rules/README.md#no-physical-direction-utility
 
@@ -86,6 +87,7 @@ export interface LintNavDetail {
   column: number;
   source?: string;
   frontmatterScope?: FrontmatterScope;
+  onNavigated?: (target: HTMLElement) => void;
 }
 
 export const LINT_NAV_EVENT = 'open-knowledge:lint-nav';
@@ -159,7 +161,7 @@ function DiagnosticRowBody({
           aria-hidden="true"
           className={cn(
             'mt-0.5 size-3.5 shrink-0',
-            diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-500',
+            diagnostic.severity === 'error' ? 'text-destructive' : 'text-warning',
           )}
         />
         <span className="min-w-0 flex-1 text-foreground">
@@ -462,6 +464,8 @@ export function ProblemsPanel({
   onAutoFix,
   onAskAi,
   onFixWithAi,
+  onDestinationComplete,
+  onDestinationRequested,
 }: {
   docName: string;
   diagnostics: DiagnosticLike[];
@@ -471,6 +475,13 @@ export function ProblemsPanel({
   onAutoFix?: () => void;
   onAskAi?: (diagnostic: DiagnosticLike) => void;
   onFixWithAi?: (scope: PanelScope) => void;
+  onDestinationComplete?: (target: HTMLElement) => void;
+  onDestinationRequested?: (
+    docName: string,
+    allowMissing?: boolean,
+    onReady?: () => void,
+    completion?: 'synced' | 'navigated',
+  ) => void;
 }) {
   const { t } = useLingui();
   const panelRef = useRef<HTMLElement>(null);
@@ -606,7 +617,7 @@ export function ProblemsPanel({
   useEffect(() => subscribeToProjectFixSweepSettled(() => onSweepSettledRef.current()), []);
 
   function handleNav(diagnostic: DiagnosticLike) {
-    const detail = lintNavDetailOf(docName, diagnostic);
+    const detail = { ...lintNavDetailOf(docName, diagnostic), onNavigated: onDestinationComplete };
     rememberPendingSourceNavigation(docName, { kind: 'lint', detail });
     window.dispatchEvent(new CustomEvent(LINT_NAV_EVENT, { detail }));
   }
@@ -617,10 +628,22 @@ export function ProblemsPanel({
       handleNav(diagnostic);
       return;
     }
+    const detail = {
+      ...lintNavDetailOf(targetDocName, diagnostic),
+      onNavigated: onDestinationComplete,
+    };
     rememberPendingSourceNavigation(targetDocName, {
       kind: 'lint',
-      detail: lintNavDetailOf(targetDocName, diagnostic),
+      detail,
     });
+    onDestinationRequested?.(
+      targetDocName,
+      false,
+      () => {
+        window.dispatchEvent(new CustomEvent(LINT_NAV_EVENT, { detail }));
+      },
+      'navigated',
+    );
     window.location.hash = hashFromDocName(targetDocName);
   }
 
@@ -1059,10 +1082,7 @@ function ProjectAuditResults({
           {configWarnings.map((warning, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: the warnings array is a static audit snapshot (no reorder/insert between renders), and identical config warnings can legitimately repeat — a text-only key would collide.
             <li key={`${index}-${warning}`} className="flex items-start gap-1.5 px-2 text-xs">
-              <AlertTriangle
-                aria-hidden="true"
-                className="mt-0.5 size-3.5 shrink-0 text-amber-500"
-              />
+              <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-warning" />
               <span className="min-w-0 text-foreground">{warning}</span>
             </li>
           ))}

@@ -1,11 +1,32 @@
 # Contributing to OpenKnowledge
 
-Thanks for contributing! Bug reports, feature requests, and pull requests are all welcome.
+Thanks for helping. The most useful thing you can send us is a detailed issue, not a pull request.
 
-- **Found a bug or have an idea?** [Open an issue](https://github.com/inkeep/open-knowledge/issues/new/choose).
+- **Found a bug or have an idea?** [Open an issue](https://github.com/inkeep/open-knowledge/issues/new/choose). This is the main way to contribute; see [Write an issue we can build from](#write-an-issue-we-can-build-from).
 - **Question or setup help?** Ask in [Discord](https://discord.gg/VRKk2EaGHN).
-- **Ready to code?** Open a pull request against this repository.
 - **Read a language other than English?** Most of our interface translations are machine-translated and have never been read by a native speaker, and we ship them anyway rather than hide them from the people who could fix them. Correcting one is the most useful thing you can do for it — see [Translate the interface](https://openknowledge.ai/docs/contribute/translations).
+- **Want to write the code yourself?** Read [Pull requests](#pull-requests) before you start.
+
+## Why issues come first
+
+Reviewing an outside pull request takes us longer than building the same change from a clear issue. We have to read code written without our context, check it for security problems, and usually rework it to fit the codebase. A good issue skips that: it costs you less time, and we build, test and review the change in our normal process.
+
+## Write an issue we can build from
+
+Use the bug report or feature request form. The issues we can act on fastest:
+
+- **Start with the problem, not the solution.** Say what you were doing, what happened, and why it matters to you.
+- **For a bug,** give steps that reproduce it, your version and platform, and any logs or screenshots.
+- **For a feature,** describe what you would see if it worked. That tells us when it is done.
+- **Point at the code if you found it.** A file, a function or a link to a line helps. Describe the fix in words.
+- **Don't paste a full patch.** Describe the fix in words. If you want to write it yourself, say so in the issue; once a maintainer accepts it (see [Pull requests](#pull-requests)), open a pull request so the change comes with the [Contributor License Agreement](./CLA.md).
+
+When a fix ships, we close your issue, and our release automation usually comments on it with the version the fix shipped in.
+
+## How credit works
+
+- **Code contributors** are people whose pull requests we accept. The commit that lands credits you as a co-author, which makes you a contributor to this repository. Code contributions require the CLA.
+- **Issue authors** are credited on the issue itself, which stays linked to the problem you found and is closed when we fix it. Filing an issue does not make you a code contributor, and it does not require the CLA.
 
 ## Development setup
 
@@ -33,7 +54,7 @@ See `.env.example` for optional settings (OpenTelemetry, a custom dev port).
 
 ### Toolchain
 
-The repo pins **Node.js 24.21.0** in `.node-version` and in `package.json`'s `devEngines.runtime`, and the `packageManager` field selects the exact **pnpm 12** version. `pnpm install` downloads that Node.js into the pnpm store the first time, from the per-platform archives `pnpm-lock.yaml` pins by checksum, so the first install needs network access. After that, every command started through `pnpm run`, `pnpm exec` or a package script runs on it, whichever `node` is on your `PATH`, and `engineStrict` in `pnpm-workspace.yaml` checks the `engines.node` range against it. Keep the two pins equal, and run `pnpm install` after changing them so the commands, and the Turbo cache key the install writes, pick up the new version. Corepack and npm both need a Node.js to provide pnpm, so install the `.node-version` release first with your Node version manager (for example `fnm install`), then run `corepack enable pnpm` once so the `pnpm` commands below use Corepack's shim, or install pnpm 12 with `npm install -g pnpm@12`. The standalone installer from [pnpm.io/installation](https://pnpm.io/installation) needs no Node.js. A pnpm 10 on your `PATH` cannot switch itself to pnpm 12, so upgrade it or use Corepack. For a script you start with `node` directly, select `.node-version` first with your Node version manager, for example `fnm use`.
+The repo pins **Node.js 24.21.0** in `.node-version` and in `package.json`'s `devEngines.runtime`, and the `packageManager` field selects the exact **pnpm 12** version. `pnpm install` downloads that Node.js into the pnpm store the first time, from the per-platform archives `pnpm-lock.yaml` pins by checksum, so the first install needs network access. After that, every command started through `pnpm run`, `pnpm exec` or a package script runs on it, whichever `node` is on your `PATH`, and `engineStrict` in `pnpm-workspace.yaml` checks the `engines.node` range against it. Keep the two pins equal, and run `pnpm install` after changing them so the commands, and the Turbo cache key the install writes, pick up the new version. Corepack and npm both need a Node.js to provide pnpm, so install the `.node-version` release first with your Node version manager (for example `fnm install`), then run `corepack enable pnpm` once so the `pnpm` commands below use Corepack's shim, or install pnpm 12 with `npm install -g pnpm@12`. The standalone installer from [pnpm.io/installation](https://pnpm.io/installation) needs no Node.js. A pnpm 10 older than 10.34.5 on your `PATH` cannot switch itself to pnpm 12, so upgrade it or use Corepack. For a script you start with `node` directly, select `.node-version` first with your Node version manager, for example `fnm use`.
 
 Rust is pinned to one exact release. `rust-toolchain.toml` at the repo root declares it, and rustup applies it to every `cargo` and `rustc` call inside the repository and installs that release on the first build, so that build needs network access once. Install rustup from [rustup.rs](https://rustup.rs). The native-config package's build script refuses any other compiler: a `RUSTUP_TOOLCHAIN` variable, a `+toolchain` argument, a `rustup override` set on the directory, or a `cargo` or `rustc` earlier on your `PATH` that rustup does not manage (a Homebrew, distribution or Nix install, for example). Its error names the compiler it found and the release the file declares.
 
@@ -73,7 +94,14 @@ A short allowlist survives: directives a tool parses (`biome-ignore lint/style/n
 
 If lint stops you, the diagnostic names the class of comment, the fix, and links to [`lint-plugins/no-comments/README.md`](./lint-plugins/no-comments/README.md) — the full policy, including how to convert a comment worth keeping into one of the allowed forms. Deleting it is usually the right answer.
 
-## Opening a pull request
+## Pull requests
+
+We still accept pull requests, on these terms:
+
+- **Small fixes are welcome any time:** typos, broken links, documentation corrections and translation fixes.
+- **Anything larger needs an accepted issue first.** Open the issue and wait for a maintainer to label it `help wanted` or say in the thread that we would take a pull request. Link that issue in your PR description.
+- **A pull request without an accepted issue may be closed without review.** If the idea is good, we track it as an issue and build it ourselves.
+- **You are responsible for every line.** AI-assisted code is fine when you understand it, have run it, and can answer questions about it. We close pull requests that read as unreviewed AI output.
 
 First-time contributors are asked to sign our [Contributor License Agreement](./CLA.md) — a bot comments a one-click signing link on your PR (Inkeep employees are exempt automatically). Please follow the checklist in our [Pull Request Template](./.github/PULL_REQUEST_TEMPLATE.md):
 
@@ -86,7 +114,7 @@ First-time contributors are asked to sign our [Contributor License Agreement](./
 - Never include secrets, credentials, customer data, or local machine paths.
 - Enable **Allow edits from maintainers** so reviewers can push fixes to your branch.
 
-A maintainer will review your PR; if you don't hear back within a few business days, a friendly nudge on the thread is welcome. Accepted changes land on `main` with your authorship preserved (your PR may show as closed rather than merged).
+A maintainer reviews pull requests that are small fixes or link an accepted issue; if you don't hear back within a few business days, a friendly nudge on the thread is welcome. Accepted changes land on `main` with your authorship preserved (your PR may show as closed rather than merged).
 
 ## License
 

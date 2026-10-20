@@ -41,6 +41,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useContactEmail } from '@/hooks/use-contact-email';
 import { bugReportSendManager } from '@/lib/bug-report-send-manager';
 import { formatBundleSize, zipBasename } from '@/lib/bug-report-support';
+import { okCliCommandName } from '@/lib/channel-cli-copy';
 import { commitContactEmail } from '@/lib/contact-email-store';
 import { isImageAttachmentType } from '@/lib/image-attachments';
 import { revealInFileManagerLabel } from '@/lib/platform-labels';
@@ -171,6 +172,7 @@ function ReportBugDialog({
   agentChat,
 }: ReportBugDialogProps) {
   const { t } = useLingui();
+  const cliCommand = okCliCommandName();
   const desktopPlatform = typeof window !== 'undefined' ? window.okDesktop?.platform : undefined;
   const isMacOS = desktopPlatform === 'darwin';
   const [phase, setPhase] = useState<Phase>(COMPOSE_IDLE);
@@ -324,7 +326,10 @@ function ReportBugDialog({
             </DialogHeader>
             <DialogBody className="flex flex-auto flex-col gap-2 pb-2 [&>*]:shrink-0">
               {crashInvite !== undefined && (
-                <div className="flex items-start gap-2.5 rounded-md border border-chart-3/35 bg-chart-3/10 px-3 py-2.5 text-sm">
+                <div
+                  data-testid="report-bug-crash-invite"
+                  className="flex items-start gap-2.5 rounded-md border border-chart-3/35 bg-chart-3/10 px-3 py-2.5 text-sm"
+                >
                   <TriangleAlertIcon
                     className="mt-0.5 size-4 shrink-0 text-chart-3"
                     aria-hidden="true"
@@ -345,7 +350,7 @@ function ReportBugDialog({
               {phase.createError !== null && (
                 <div
                   role="alert"
-                  className="flex items-start gap-2.5 rounded-md border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm"
+                  className="flex items-start gap-2.5 rounded-md border border-destructive/35 px-3 py-2.5 text-sm"
                 >
                   <AlertCircleIcon
                     className="mt-0.5 size-4 shrink-0 text-destructive"
@@ -359,7 +364,7 @@ function ReportBugDialog({
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       <Trans>
                         You can also create one from a terminal with{' '}
-                        <code className="font-mono">ok bug-report</code>.
+                        <code className="font-mono">{cliCommand} bug-report</code>.
                       </Trans>
                     </p>
                   </div>
@@ -553,6 +558,12 @@ function ReportBugDialog({
                               It also adds the out-of-memory kills of OpenKnowledge that the system
                               journal recorded in the past week, without the machine name, account
                               id, or folder paths.
+                            </Trans>
+                          )}{' '}
+                          {desktopPlatform === 'linux' && (
+                            <Trans>
+                              It also adds any display-connection errors OpenKnowledge wrote to your
+                              user journal in the past week, each message cut to 200 characters.
                             </Trans>
                           )}
                           {desktopPlatform === 'win32' && (

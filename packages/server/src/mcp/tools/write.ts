@@ -4,6 +4,7 @@ import {
   type DocExtension,
   type FrontmatterMap,
   type FrontmatterPatch,
+  findTemplateByName,
   instantiateDoc,
   normalizeBridge,
   type ProblemType,
@@ -11,6 +12,8 @@ import {
   SKILL_AUTHORING_WARNING_CODES,
   serializeFrontmatterMap,
   stripFrontmatter,
+  UploadAssetSuccessSchema,
+  type UploadRequest,
   unwrapFrontmatterFences,
   withFences,
 } from '@inkeep/open-knowledge-core';
@@ -37,7 +40,7 @@ import {
   parseBrokenLinkSuppression,
   parseBrokenLinks,
 } from './advisory-warnings.ts';
-import { buildPreviewAttachWarning, resolvePreviewUrl, START_UI_TEXT_HINT } from './preview-url.ts';
+import { buildPreviewAttachWarning, resolvePreviewUrl, startUiTextHint } from './preview-url.ts';
 import type { ConfigOrResolver, ServerInstance, ServerUrlOrResolver } from './shared.ts';
 import {
   AUTHORING_WARNING_CODE_GLOSS,
@@ -47,7 +50,7 @@ import {
   docExtensionOnDisk,
   documentResultBaseShape,
   errorTextWithDetail,
-  HOCUSPOCUS_NOT_RUNNING_ERROR,
+  hocuspocusNotRunningError,
   httpPost,
   httpPut,
   looseObjectArray,
@@ -272,7 +275,7 @@ async function writeOneDoc(
   if (spec.template !== undefined) {
     const parentFolder = parentFolderOf(docName);
     const available = resolveTemplatesAvailable(cwd, parentFolder);
-    const matched = available.find((t) => t.name === spec.template);
+    const matched = findTemplateByName(available, spec.template);
     if (!matched) {
       return {
         docName,
@@ -393,7 +396,7 @@ async function handleFolder(
   url: string | undefined,
   deps: WriteDeps,
 ) {
-  if (!url) return textResult(HOCUSPOCUS_NOT_RUNNING_ERROR, true);
+  if (!url) return textResult(hocuspocusNotRunningError(), true);
   const identity = deps.identityRef?.current;
   const result = await httpPost(apiTarget(url, deps.localApi), '/api/create-folder', {
     path: folder.path,
@@ -441,7 +444,7 @@ async function handleTemplate(
   const resolved = resolveTemplatePath(template.path);
   if (!resolved.ok) return textResult(`Error: ${resolved.error}`, true);
   const { folder, name } = resolved;
-  if (!url) return textResult(HOCUSPOCUS_NOT_RUNNING_ERROR, true);
+  if (!url) return textResult(hocuspocusNotRunningError(), true);
   const result = await httpPut(url, '/api/template', {
     folder,
     name,
@@ -478,7 +481,7 @@ async function handleAsset(
   url: string | undefined,
   deps: WriteDeps,
 ) {
-  if (!url) return textResult(HOCUSPOCUS_NOT_RUNNING_ERROR, true);
+  if (!url) return textResult(hocuspocusNotRunningError(), true);
   if ((asset.content === undefined) === (asset.source === undefined)) {
     return textResult(
       'Error: provide exactly one of `content` (base64) or `source` (local file path) for an asset.',
@@ -509,6 +512,7 @@ async function handleAsset(
 
   const form = new FormData();
   form.append('parentDocName', parentDocName);
+  if (folder) form.append('placement', 'parent-dir' satisfies UploadRequest['placement']);
   form.append('file', new Blob([new Uint8Array(bytes)]), fileName);
 
   const uploadPath = `/api/upload${qs ? `?${qs}` : ''}`;
@@ -568,18 +572,22 @@ async function handleAsset(
         };
   if (!resBody.ok) return textResult(`Error: ${resBody.error}`, true);
 
-  const src = typeof resBody.data?.src === 'string' ? resBody.data.src : undefined;
-  const path = typeof resBody.data?.path === 'string' ? resBody.data.path : undefined;
-  const deduped = resBody.data?.deduped === true;
-  const ref = src ?? path ?? fileName;
+  const success = UploadAssetSuccessSchema.safeParse(resBody.data);
+  if (!success.success) {
+    return textResult(
+      `Error: Server returned 2xx response with malformed upload body: ${z.prettifyError(success.error)}`,
+      true,
+    );
+  }
+  const { src, path, deduped } = success.data;
   const text = [
-    `Uploaded asset to ${parentDocName}${deduped ? ' (deduplicated — identical bytes already present)' : ''}.`,
-    `Reference it in a doc with: ![${fileName}](${ref})`,
+    `Uploaded asset${path ? ` to ${path}` : ''}${deduped ? ' (deduplicated — identical bytes already present)' : ''}.`,
+    `Reference it in a doc with: ![${fileName}](${src})`,
   ].join('\n');
   return textPlusStructured(text, {
     asset: {
       ok: true,
-      ...(src ? { src } : {}),
+      src,
       ...(path ? { path } : {}),
       ...(deduped ? { deduped } : {}),
     },
@@ -798,16 +806,17 @@ async function handleSingleDoc(
 
   const noOpNote = emptyAppendNoOpNote(w.position, spec.content);
   const lines: string[] = [
-    (w.createdByPosition ? createdByPositionNote(w.docName, w.createdByPosition) : null) ??
-      noOpNote ??
-      (w.fromTemplate !== undefined
-        ? `Written successfully (instantiated from template "${w.fromTemplate}").`
-        : `Written successfully (${w.position}).`),
+    w.createdByPosition
+      ? createdByPositionNote(w.docName, w.createdByPosition)
+      : (noOpNote ??
+        (w.fromTemplate !== undefined
+          ? `Written successfully (instantiated from template "${w.fromTemplate}").`
+          : `Written successfully (${w.position}).`)),
   ];
   const fmNote = frontmatterIgnoredNote(w.position, spec.content);
   if (fmNote) lines.push(fmNote);
   if (w.extensionNote) lines.push(w.extensionNote);
-  if (noPreviewAnywhere && !preview) lines.push(START_UI_TEXT_HINT);
+  if (noPreviewAnywhere && !preview) lines.push(startUiTextHint());
   if (summaryHint) lines.push(summaryHint);
   if (hints) {
     for (const hint of hints) {
@@ -956,7 +965,7 @@ export function register(server: ServerInstance, deps: WriteDeps): void {
             path: z
               .string()
               .describe(
-                'Asset path incl. extension — the slashes are the folder. Example: "images/diagram.png".',
+                'Asset path incl. extension — the slashes are the folder. Example: "images/diagram.png". A bare file name (no folder) goes to the attachment folder (`content.attachmentFolderPath`; by default the content root).',
               ),
             content: z.string().optional().describe('Base64 of the binary. Use for small files.'),
             source: z
@@ -1038,8 +1047,13 @@ export function register(server: ServerInstance, deps: WriteDeps): void {
         asset: z
           .object({
             ok: z.boolean(),
-            src: z.string().optional().describe('The reference src to embed in a doc.'),
-            path: z.string().optional(),
+            src: z.string().describe('The reference src to embed in a doc.'),
+            path: z
+              .string()
+              .optional()
+              .describe(
+                'Content-root-relative path the server reports holding the asset (the existing file when `deduped`). Absent when the server reports none.',
+              ),
             deduped: z
               .boolean()
               .optional()
@@ -1099,7 +1113,7 @@ export function register(server: ServerInstance, deps: WriteDeps): void {
           'documents',
         ]);
         if (teaching) return textResult(`Error: ${teaching}`, true);
-        if (!url) return textResult(HOCUSPOCUS_NOT_RUNNING_ERROR, true);
+        if (!url) return textResult(hocuspocusNotRunningError(), true);
         return handleBatch(args.documents, cwd, contentDir, url, deps, lockDir, autoOpen);
       }
 
@@ -1113,7 +1127,7 @@ export function register(server: ServerInstance, deps: WriteDeps): void {
       if (teaching) return textResult(`Error: ${teaching}`, true);
 
       if (args.document !== undefined) {
-        if (!url) return textResult(HOCUSPOCUS_NOT_RUNNING_ERROR, true);
+        if (!url) return textResult(hocuspocusNotRunningError(), true);
         return handleSingleDoc(
           { ...args.document, summary: args.summary },
           cwd,

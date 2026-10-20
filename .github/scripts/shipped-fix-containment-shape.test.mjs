@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 import { gitCleanEnv } from '../../scripts/git-clean-env.mjs';
+import { configureTestGitRepository } from '../../test-support/configure-git-fixture.test-helper.ts';
+import { expectNoAutomaticGitMaintenance } from './git-fixture-maintenance.test-helper.mjs';
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 const OK_ROOT = join(SCRIPTS, '..', '..');
@@ -34,6 +36,16 @@ afterAll(() => {
 describe('promotion: promote-stable refuses before it tags', () => {
   const steps = stepsOf('promote-stable.yml', 'promote');
   const [guard] = guardSteps(steps);
+
+  test('an existing stable Release stays unpublished until desktop finalization', () => {
+    const create = steps.find((step) => step.name === 'Create stable GitHub Release');
+    expect(create).toBeDefined();
+    const edits = create.run.split('\n').filter((line) => line.trim().startsWith('gh release edit '));
+    expect(edits.map((line) => line.trim())).toEqual([
+      'gh release edit "$STABLE_TAG" --notes-file "$BODY_FILE"',
+    ]);
+    expect(create.run).toMatch(/gh release create "\$STABLE_TAG" \\\n\s+--draft/);
+  });
 
   test('the promote job runs the guard on the beta it computed the version for', () => {
     expect(guardSteps(steps)).toHaveLength(1);
@@ -126,6 +138,7 @@ describe('direct recovery: desktop-release refuses a stable in prepare', () => {
   test('the archived guard runs on its own against a tag checkout that predates it', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ok-shipped-fix-archive-')));
     scratch.push(root);
+    const env = gitCleanEnv();
     const git = (...args) =>
       execFileSync(
         'git',
@@ -138,10 +151,12 @@ describe('direct recovery: desktop-release refuses a stable in prepare', () => {
           'commit.gpgsign=false',
           ...args,
         ],
-        { cwd: join(root, 'checkout'), env: gitCleanEnv(), encoding: 'utf8' },
+        { cwd: join(root, 'checkout'), env, encoding: 'utf8' },
       ).trim();
     mkdirSync(join(root, 'checkout'));
     git('init', '-q', '-b', 'main');
+    env.GIT_TRACE2_EVENT = join(root, 'checkout', '.git', 'fixture-maintenance.jsonl');
+    configureTestGitRepository(join(root, 'checkout'), (args) => git(...args));
     writeFileSync(join(root, 'checkout', 'notes.txt'), 'first\n');
     git('add', '-A');
     git('commit', '-q', '-m', 'Initial (#1)');
@@ -175,6 +190,7 @@ describe('direct recovery: desktop-release refuses a stable in prepare', () => {
     expect(refused.stdout).toContain(
       '::error::refs/tags/v1.0.0 lacks 1 fix that a published stable already shipped: #2 (v1.0.1).',
     );
+    expectNoAutomaticGitMaintenance(join(root, 'checkout'), env);
   });
 });
 
@@ -182,6 +198,22 @@ describe('direct recovery and re-runs: desktop-release checks again right before
   const release = workflow('desktop-release.yml');
   const steps = stepsOf('desktop-release.yml', 'finalize');
   const [guard] = guardSteps(steps);
+
+  test('RELEASES.md stable publication holds one lock across the final check and draft flip', () => {
+    expect(release.jobs.finalize.concurrency).toEqual({
+      group:
+        "${{ needs.prepare.outputs.channel == 'latest' && 'ok-stable-publication' || format('desktop-finalize-{0}', github.run_id) }}",
+      'cancel-in-progress': false,
+    });
+    expect(release.concurrency).toEqual({
+      group: 'desktop-release-${{ github.event.client_payload.release_tag || inputs.release_tag }}',
+      'cancel-in-progress': false,
+    });
+    for (const [name, job] of Object.entries(release.jobs)) {
+      if (name === 'finalize') continue;
+      expect(job.concurrency, name).toBeUndefined();
+    }
+  });
 
   test('finalize runs the guard on the stable channel, from a checkout of the workflow revision with every tag', () => {
     expect(guardSteps(steps)).toHaveLength(1);
@@ -317,5 +349,141 @@ describe('the bug lane does not hand over a batch a point release would refuse',
       String(step.run ?? '').includes('gh workflow run bug-lane-verify.yml'),
     );
     expect(handoff.if).toContain("steps.evaluate.outputs.fix_refs != ''");
+  });
+});
+
+
+describe('stable publication recovery reporting', () => {
+  test('beta recovery keeps the installer and inventory gates before publication', () => {
+    const step = stepsOf('desktop-release.yml', 'alert').find(
+      (candidate) => candidate.name === 'Warn on stuck draft',
+    );
+    expect(step).toBeDefined();
+    const res = spawnSync('bash', ['-c', step.run], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, RELEASE_TAG: 'v1.2.3-beta.1', CHANNEL: 'beta' },
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout).toContain('STUCK-DRAFT');
+    expect(res.stdout).toContain('Recovering unpublished beta installers');
+    expect(res.stdout).toContain('build and inventory gates');
+    expect(res.stdout).not.toContain('gh release edit');
+  });
+
+  test('the stuck-draft warning routes stable recovery through the publication lock', () => {
+    const step = stepsOf('desktop-release.yml', 'alert').find(
+      (candidate) => candidate.name === 'Warn on stuck draft',
+    );
+    expect(step).toBeDefined();
+    const res = spawnSync('bash', ['-c', step.run], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, RELEASE_TAG: 'v1.2.3', CHANNEL: 'latest' },
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout).toContain('STUCK-DRAFT');
+    expect(res.stdout).toContain('lock-bearing finalize');
+    expect(res.stdout).toContain('RELEASES.md');
+    expect(res.stdout).not.toContain('gh release edit');
+  });
+
+  test.each([
+    ['success', 0, 'finalize was cancelled'],
+    ['success', 28, 'finalize was cancelled'],
+    ['failure', 0, 'Linux packaging'],
+  ])('cancelled finalize reports the blocker with Linux %s and webhook exit %s', (linux, curlStatus, expected) => {
+    const step = stepsOf('desktop-release.yml', 'alert').find(
+      (candidate) => candidate.name === 'Alert on a blocked release (FR5c)',
+    );
+    expect(step).toBeDefined();
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ok-finalize-cancel-')));
+    scratch.push(dir);
+    const capture = join(dir, 'curl-args');
+    const res = spawnSync(
+      'bash',
+      ['-c', `curl() { printf '%s\\0' "$@" > "$CAPTURE"; return ${curlStatus}; }\n${step.run}`],
+      {
+        cwd: OK_ROOT,
+        encoding: 'utf8',
+        env: {
+          PATH: process.env.PATH,
+          CAPTURE: capture,
+          RELEASE_TAG: 'v1.2.3',
+          SMOKE_VERDICT: 'pass',
+          RESULT_PREPARE: 'success',
+          RESULT_MACOS: 'success',
+          RESULT_WINDOWS: 'success',
+          RESULT_LINUX: linux,
+          RESULT_PUBLISH: 'success',
+          RESULT_FINALIZE: 'cancelled',
+          GITHUB_SERVER_URL: 'https://github.com',
+          GITHUB_REPOSITORY: 'test/release',
+          GITHUB_RUN_ID: '123',
+          SLACK_RELEASES_WEBHOOK_URL: 'https://example.test/slack',
+        },
+      },
+    );
+    expect(res.status, res.stderr).toBe(0);
+    const args = readFileSync(capture, 'utf8').split('\0');
+    const payload = JSON.parse(args[args.indexOf('--data') + 1]);
+    const message = payload.text;
+    expect(message).toContain(expected);
+    expect(message).toContain('v1.2.3');
+    if (linux === 'success') expect(message).toContain('publication may have completed');
+    expect(JSON.stringify(payload)).toContain('https://github.com/test/release/actions/runs/123');
+    if (linux === 'success') {
+      expect(res.stdout).not.toContain('The Release stays a draft');
+      expect(message).not.toContain('nothing shipped');
+    }
+    if (curlStatus === 28) expect(res.stdout).toContain('cancelled-finalize alert failed to POST');
+  });
+});
+
+
+describe('stable announcements cannot consume the finalizer job budget', () => {
+  test.each(['Slack', 'Discord'])('%s bounds requests and preserves best-effort failure', (service) => {
+    const step = stepsOf('desktop-release.yml', 'finalize').find(
+      (candidate) => candidate.name === `Announce stable release to ${service}`,
+    );
+    expect(step).toBeDefined();
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ok-finalize-post-')));
+    scratch.push(dir);
+    const capture = join(dir, 'curl-args');
+    const fetchCapture = join(dir, 'fetch-args');
+    writeFileSync(fetchCapture, '');
+    const res = spawnSync(
+      'bash',
+      [
+        '-c',
+        `gh() { printf 'gh %s\\n' "$*" >> "$FETCH_CAPTURE"; }
+timeout() { printf 'timeout %s\\n' "$*" >> "$FETCH_CAPTURE"; printf partial-fetch; return 124; }
+curl() { printf '%s\\0' "$@" > "$CAPTURE"; return 28; }
+${step.run}`,
+      ],
+      {
+        cwd: OK_ROOT,
+        encoding: 'utf8',
+        env: {
+          PATH: process.env.PATH,
+          CAPTURE: capture,
+          FETCH_CAPTURE: fetchCapture,
+          RELEASE_TAG: 'v1.2.3',
+          VERSION: '1.2.3',
+          GITHUB_REPOSITORY: 'test/release',
+          SLACK_RELEASES_WEBHOOK_URL: 'https://example.test/slack',
+          DISCORD_WEBHOOK_URL: 'https://example.test/discord',
+        },
+      },
+    );
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout).toContain(`::warning::${service} announcement failed`);
+    const args = readFileSync(capture, 'utf8').split('\0');
+    expect(args[args.indexOf('--max-time') + 1]).toBe('30');
+    expect(args[args.indexOf('--connect-timeout') + 1]).toBe('10');
+    expect(readFileSync(fetchCapture, 'utf8')).toContain(
+      'timeout --kill-after=5s 30s gh release view v1.2.3',
+    );
+    const payload = JSON.parse(args[args.indexOf('--data') + 1]);
+    expect(payload.text ?? payload.content).toContain('1.2.3');
+    expect(JSON.stringify(payload)).not.toContain('partial-fetch');
   });
 });

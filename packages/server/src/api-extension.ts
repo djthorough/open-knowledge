@@ -201,6 +201,7 @@ import {
   isPersistenceExcludedDoc,
   isSystemDoc,
 } from './cc1-broadcast.ts';
+import type { RemovalLifecycleStatus } from './conflict-kinds.ts';
 import {
   isReservedProjectStatePath,
   listManagedDocNamesUnderFolder,
@@ -223,15 +224,18 @@ import {
   stripDocExtension,
 } from './doc-extensions.ts';
 import {
+  assertNeverDeferredStoreWait,
   type DocumentDurabilityState,
   OK_DOC_REMOVED,
   OK_PATH_UNRESOLVABLE,
+  OK_STORE_DISCARDED,
   OK_STORE_REFUSED,
   type StoreFailure,
 } from './document-durability-state.ts';
 import {
   type ReconcileBeforeWriteResult,
   reconcileDiskBeforeAgentWrite,
+  reviveFrozenResidentDoc,
 } from './external-change.ts';
 import { extractActorIdentity } from './extract-actor-identity.ts';
 import {
@@ -1186,10 +1190,11 @@ function createCaseOnlyRenameTempPath(sourcePath: string): string {
   throw new Error('Unable to allocate temporary path for case-only rename');
 }
 
-function writeFileIfContentDiffers(filePath: string, content: string): void {
+function writeFileIfContentDiffers(filePath: string, content: string): boolean {
   const current = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : null;
-  if (current === content) return;
+  if (current === content) return false;
   tracedWriteFileSync(filePath, content, 'utf-8');
+  return true;
 }
 
 function renamePathOnDisk(sourcePath: string, destinationPath: string): void {
@@ -1336,6 +1341,8 @@ interface ApiExtensionBaseOptions {
   getBridgeLossReporter?: () => BridgeDeriveLossReporter | undefined;
   getPrincipal?: () => Principal | null;
   homeDirOverride?: string;
+  resetSettingsForTest?: () => void;
+  settleDiskEventsForTest?: () => Promise<void>;
   agentIntegrations?: AgentRegistryHostSeam;
   savedThemeLockTimeoutMs?: number;
   acpRegistry?: AcpRegistry;
@@ -1344,6 +1351,10 @@ interface ApiExtensionBaseOptions {
   contentFilter?: ContentFilter;
   installedAgentsProbe?: (scheme: InstalledAgentScheme) => Promise<boolean>;
   forceUnloadDocument?: (document: Document) => Promise<void>;
+  onNamespaceCreateAccepted?: (docName: string) => void;
+  captureNamespaceMove?: (docName: string) => () => void;
+  capturePublicationReceipt?: (document: Document, docName: string) => (() => void) | undefined;
+  onResidentAdopted?: (document: Document, docName: string) => void;
   ready?: Promise<void>;
   recentlyRemovedDocs?: RecentlyRemovedDocs;
   serializeDoc?: (docName: string) => string | null;
@@ -1406,11 +1417,28 @@ export interface CommentDocHooks {
 }
 
 function removedDocProblem(failure: StoreFailure) {
-  return {
-    type: 'urn:ok:error:doc-removed' as const,
-    title: 'Edit applied in memory; disk write refused because the document is no longer on disk.',
-    detail: `${failure.message}. Retrying will not help: re-create the document before writing this content again.`,
-  } satisfies BatchEntryError;
+  switch (failure.removal?.kind) {
+    case 'path-occupied':
+      return {
+        type: 'urn:ok:error:doc-removed' as const,
+        title:
+          'Edit applied in memory; disk write refused because the file now at this path is not loaded into the document.',
+        detail: `${failure.message}. Retrying will not help until the server reloads this document from disk, for example after Open Knowledge restarts; tell the user instead of retrying.`,
+      } satisfies BatchEntryError;
+    case 'renamed':
+      return {
+        type: 'urn:ok:error:doc-removed' as const,
+        title: 'Edit applied in memory; disk write refused because the document was renamed.',
+        detail: `${failure.message}. Retrying will not help: re-read the document at ${failure.removal.renamedTo} and re-apply your change there.`,
+      } satisfies BatchEntryError;
+    case undefined:
+      return {
+        type: 'urn:ok:error:doc-removed' as const,
+        title:
+          'Edit applied in memory; disk write refused because the document is no longer on disk.',
+        detail: `${failure.message}. Retrying will not help: re-create the document before writing this content again.`,
+      } satisfies BatchEntryError;
+  }
 }
 
 function pathFaultProblem(failure: StoreFailure) {
@@ -1419,6 +1447,14 @@ function pathFaultProblem(failure: StoreFailure) {
     title:
       'Edit applied in memory; disk write refused because the document path could not be resolved.',
     detail: `${failure.message}. Retrying will not help: the path has to be repaired on disk before this content can be written.`,
+  } satisfies BatchEntryError;
+}
+
+function discardedStoreProblem(failure: StoreFailure) {
+  return {
+    type: 'urn:ok:error:branch-switched' as const,
+    title: 'Edit not saved: the Git branch changed before it reached disk.',
+    detail: `${failure.message}. The document now shows the checked-out branch. Re-read it, then repeat the edit if it is still needed.`,
   } satisfies BatchEntryError;
 }
 
@@ -1443,6 +1479,11 @@ export function respondPersistenceFailure(
   }
   if (failure.code === OK_DOC_REMOVED) {
     const { type, title, detail } = removedDocProblem(failure);
+    errorResponse(res, 409, type, title, { handler, detail });
+    return;
+  }
+  if (failure.code === OK_STORE_DISCARDED) {
+    const { type, title, detail } = discardedStoreProblem(failure);
     errorResponse(res, 409, type, title, { handler, detail });
     return;
   }
@@ -1472,7 +1513,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
   async function dispatchMutation(operation: () => Promise<void>, pathname: string): Promise<void> {
     if (closingMutations)
       throw new ServerMutationShuttingDownError(pathname.startsWith('/api/local-op/'));
-    const task = operation();
+    const task = durabilityState.runWithinWriteWaitBudget(operation);
     pendingMutations.add(task);
     try {
       await task;
@@ -1528,12 +1569,14 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     getSyncEngine,
     conflicts,
     setBatchInProgress,
-    localOpCliArgs = ['open-knowledge'],
+    localOpCliArgs,
     authStreamHeartbeatMs,
     projectDir,
     getBridgeLossReporter,
     getPrincipal,
     homeDirOverride,
+    resetSettingsForTest,
+    settleDiskEventsForTest,
     agentIntegrations,
     savedThemeLockTimeoutMs,
     acpRegistry,
@@ -1542,6 +1585,10 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     contentFilter,
     installedAgentsProbe,
     forceUnloadDocument,
+    onNamespaceCreateAccepted,
+    captureNamespaceMove,
+    capturePublicationReceipt,
+    onResidentAdopted,
     ready,
     recentlyRemovedDocs,
     serializeDoc,
@@ -1810,10 +1857,6 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
 
   const writeAdvisoryGate = createWriteAdvisoryGate();
 
-  function findMissingDocCandidatesInIndex(docName: string): string[] {
-    return findMissingDocCandidates(docName, getFileIndex());
-  }
-
   async function computeOrphanHints(
     docName: string,
   ): Promise<Array<{ type: 'orphan'; parentCandidates: string[]; message: string }> | undefined> {
@@ -1883,6 +1926,44 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     if (hocuspocus.debouncer.isDebounced(debounceId)) {
       durabilityState.markAgentWriteStore(docName);
       await hocuspocus.debouncer.executeNow(debounceId);
+    }
+    const deferredWaitStarted = Date.now();
+    const deferredWait = await durabilityState.awaitDeferredStoreOutcome(docName);
+    switch (deferredWait?.kind) {
+      case undefined:
+      case 'completed':
+        break;
+      case 'discarded':
+        return {
+          kind: 'failure',
+          failure: {
+            code: OK_STORE_DISCARDED,
+            message: `A Git branch switch discarded the pending save of ${docName}`,
+          },
+        };
+      case 'failed':
+        return {
+          kind: 'failure',
+          failure: durabilityState.takeStoreFailure(docName) ?? deferredWait.failure,
+        };
+      case 'unsettled': {
+        const waitedMs = Date.now() - deferredWaitStarted;
+        console.warn(
+          JSON.stringify({
+            event: 'agent-write-deferred-store-unsettled',
+            'doc.name': docName,
+            waitedMs,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        log.warn(
+          { docName, waitedMs },
+          '[agent-write] deferred store still pending after the wait; acknowledging before it reaches disk',
+        );
+        break;
+      }
+      default:
+        assertNeverDeferredStoreWait(deferredWait);
     }
     const failure = durabilityState.takeStoreFailure(docName);
     if (failure) return { kind: 'failure', failure };
@@ -2274,7 +2355,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
 
   async function captureAndCloseDocuments(
     docNames: string[],
-    lifecycleStatus: 'deleted-upstream' | 'renamed',
+    lifecycleStatus: RemovalLifecycleStatus,
   ): Promise<Map<string, string>> {
     const liveContents = new Map<string, string>();
 
@@ -2309,6 +2390,20 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     return liveContents;
   }
 
+  function reviveFrozenResident(docName: string, content: string): void {
+    const document = hocuspocus.documents.get(docName);
+    const result = reviveFrozenResidentDoc(
+      durabilityState,
+      hocuspocus,
+      docName,
+      content,
+      options.resolveEmbed,
+      undefined,
+      getBridgeLossReporter?.(),
+    );
+    if (result === 'revived' && document) onResidentAdopted?.(document, docName);
+  }
+
   function syncRenamedDocsToDisk(
     renamed: RenamedDocMapping[],
     liveContents: ReadonlyMap<string, string>,
@@ -2329,6 +2424,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
 
       if (typeof finalContent === 'string') {
         registerWrite(filePath, contentHash(finalContent));
+        reviveFrozenResident(toDocName, finalContent);
       }
     }
   }
@@ -2368,12 +2464,20 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     return readFileSync(filePath, 'utf-8');
   }
 
-  function writeManagedRenameDocumentToDisk(docName: string, markdown: string): void {
+  function writeManagedRenameDocumentToDisk(
+    docName: string,
+    markdown: string,
+    document: Document | undefined,
+  ): void {
+    const publicationReceipt = document
+      ? capturePublicationReceipt?.(document, docName)
+      : undefined;
     const filePath = resolveContentEntryPath(contentDir, 'file', docName);
     tracedMkdirSync(dirname(filePath), { recursive: true });
-    writeFileIfContentDiffers(filePath, markdown);
+    const published = writeFileIfContentDiffers(filePath, markdown);
     registerWrite(filePath, contentHash(markdown));
     durabilityState.setReconciledBase(docName, markdown);
+    if (published) publicationReceipt?.();
 
     mutateFileIndex?.({ kind: 'update', path: filePath, docName, content: markdown });
   }
@@ -2501,7 +2605,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
         ? applyAssetRenamesToLoadedDocument(pending.docName, renamedAssets)
         : pending;
       if (rewritten.rewrites === 0) continue;
-      writeManagedRenameDocumentToDisk(pending.docName, rewritten.markdown);
+      writeManagedRenameDocumentToDisk(pending.docName, rewritten.markdown, document);
       derivedMutations.push({
         kind: 'link-rewrite',
         documentName: pending.docName,
@@ -3079,7 +3183,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
                   );
 
               if (rewritten.rewrites > 0) {
-                writeManagedRenameDocumentToDisk(docName, rewritten.markdown);
+                writeManagedRenameDocumentToDisk(docName, rewritten.markdown, document);
                 rewrittenDocs.push({ docName, rewrites: rewritten.rewrites });
               }
 
@@ -3108,6 +3212,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
 
             const rootSourcePath = resolveContentEntryPath(contentDir, kind, fromPath);
             const rootDestinationPath = resolveContentEntryPath(contentDir, kind, toPath);
+            const acceptedMoves = affectedDocs.map(({ to }) => captureNamespaceMove?.(to));
             const renamedWithGit = await renameTrackedPathInGit(
               projectDir,
               rootSourcePath,
@@ -3116,6 +3221,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
             if (!renamedWithGit) {
               renamePathOnDisk(rootSourcePath, rootDestinationPath);
             }
+            for (const acceptMove of acceptedMoves) acceptMove?.();
             if (kind === 'folder') {
               renameFolderIndexEntries(fromPath, toPath);
             }
@@ -3931,6 +4037,8 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
                   flushErrors.set(p.docName, pathFaultProblem(flushOutcome.failure));
                 } else if (flushOutcome.failure.code === OK_STORE_REFUSED) {
                   flushErrors.set(p.docName, refusedStoreProblem(flushOutcome.failure));
+                } else if (flushOutcome.failure.code === OK_STORE_DISCARDED) {
+                  flushErrors.set(p.docName, discardedStoreProblem(flushOutcome.failure));
                 } else {
                   const reason = classifyUploadErrno({
                     code: flushOutcome.failure.code,
@@ -4078,7 +4186,10 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
       ? (docName) => recentlyRemovedDocs.delete(docName)
       : undefined,
     mutateFileIndexCreate: mutateFileIndex
-      ? ({ path, docName, content }) => mutateFileIndex({ kind: 'create', path, docName, content })
+      ? ({ path, docName, content }) => {
+          onNamespaceCreateAccepted?.(docName);
+          mutateFileIndex({ kind: 'create', path, docName, content });
+        }
       : undefined,
     recordDerivedDocumentBestEffort,
     recordDerivedMutationsBestEffort,
@@ -5302,6 +5413,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     respondStaleExternalWrite,
     registerWrittenDocInFileIndex,
     captureAndCloseDocuments,
+    captureNamespaceMove,
     renameTrackedPathInGit,
     renamePathOnDisk,
     splitContentPath,
@@ -5381,7 +5493,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     resolveAlias,
     extractAgentIdentity,
     docNameExistsWithAnySupportedExtension,
-    findMissingDocCandidates: findMissingDocCandidatesInIndex,
+    findMissingDocCandidates: (docName) => findMissingDocCandidates(docName, getFileIndex()),
     contentDir,
     summaryResponseFields,
     sessionManager,
@@ -5406,6 +5518,7 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     computeLintViolations,
     log,
     flushDocToGit,
+    flushGitCommit,
     commitOkArtifactWrite,
     isSafeDocName,
     shadowRef,
@@ -5418,6 +5531,10 @@ export function createApiExtension(options: ApiExtensionOptions): Extension & {
     renameAttributionCounter,
   });
   const testRoutes = createTestRoutes({
+    agentPresence: agentPresenceBroadcaster,
+    resetSettingsForTest,
+    settleDiskEvents: settleDiskEventsForTest,
+    recentlyRemovedDocs,
     conflicts,
     durabilityState,
     resolveAlias,

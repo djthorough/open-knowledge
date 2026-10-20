@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { currentCliCommandName } from '@inkeep/open-knowledge-core';
 import { type Config, isProcessAlive, resolveLockDir } from '@inkeep/open-knowledge-server';
 import { Command } from 'commander';
 import { getInvocationCwd } from '../project-anchor.ts';
@@ -19,6 +20,7 @@ import { supervisionFormats } from './supervision-formats.ts';
 
 export {
   buildStopPlan,
+  describeUnconfirmedHolderStart,
   findLockDirByNumber,
   probeCollabClients,
   runStop,
@@ -41,7 +43,8 @@ export function formatNoTargetMessage(
     return `Nothing was running for ${targetDir}, and no other open-knowledge servers are running.`;
   }
   const agreement = otherRunningServers === 1 ? ' is' : 's are';
-  const pointer = opts.listingFollows === true ? '' : ' — run `ok ps` to list them';
+  const pointer =
+    opts.listingFollows === true ? '' : ` — run \`${currentCliCommandName()} ps\` to list them`;
   return (
     `Nothing was running for ${targetDir}. ${otherRunningServers} other open-knowledge server` +
     `${agreement} running${pointer}.`
@@ -75,7 +78,7 @@ export function stopCommand(
         .argument('[target...]', 'port number, directory path (spaces OK), or "all"')
         .option(
           '--force',
-          'Stop even when the server belongs to another OpenKnowledge app (Stable or Beta) or editor windows or agents are still connected to it',
+          'Stop even when the server belongs to another OpenKnowledge app (Stable, Beta or a dev build run from source) or editor windows or agents are still connected to it',
         ),
     )
     .action(async (parts: string[], options: { force?: boolean; format?: string }) => {
@@ -94,14 +97,10 @@ export function stopCommand(
       if (target === undefined) {
         getConfig();
         const lockDir = resolveLockDir(process.cwd());
-        const outcome = await runStop({ lockDir, force, log: () => {} });
+        const buffered: string[] = [];
+        const outcome = await runStop({ lockDir, force, log: (msg) => buffered.push(msg) });
         if (outcome.hadTargets) {
-          if (outcome.stopped.length > 0) {
-            const rendered = outcome.stopped
-              .map((t) => `${t.name} (pid=${t.pid}, port=${t.port})`)
-              .join(', ');
-            console.log(`Stopped: ${rendered}`);
-          }
+          for (const line of buffered) console.log(line);
           if (outcome.failed.length > 0 || outcome.declined !== undefined) process.exitCode = 1;
         } else {
           const others = await countOtherRunningServers(lockDir);

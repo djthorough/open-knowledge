@@ -226,6 +226,8 @@ function parseStartupReceipt(pending: PendingViteStartup): TestServerStartupRece
   };
 }
 
+const RECEIPT_POLL_INTERVAL_MS = 100;
+
 function waitForStartupReceipt(
   pending: PendingViteStartup,
   deadlineAt: number,
@@ -233,11 +235,13 @@ function waitForStartupReceipt(
   return new Promise((resolve, reject) => {
     let watcher: ReturnType<typeof watch> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let poll: ReturnType<typeof setInterval> | undefined;
     let settled = false;
     const cleanup = () => {
       watcher?.off('error', onWatchError);
       watcher?.close();
       if (timer !== undefined) clearTimeout(timer);
+      if (poll !== undefined) clearInterval(poll);
       pending.proc.off('error', onError);
       pending.proc.off('exit', onExit);
     };
@@ -294,6 +298,7 @@ function waitForStartupReceipt(
           ),
         remainingMs,
       );
+      poll = setInterval(readReceipt, RECEIPT_POLL_INTERVAL_MS);
       readReceipt();
       if (pending.proc.exitCode !== null || pending.proc.signalCode !== null) onExit();
     } catch (err) {
@@ -314,7 +319,9 @@ export async function waitForBoundViteEndpoint(
   return { port: receipt.port, baseURL };
 }
 
-function endpointBaseURL(receipt: TestServerStartupReceipt): string {
+export function endpointBaseURL(
+  receipt: Pick<TestServerStartupReceipt, 'address' | 'family' | 'port'>,
+): string {
   return `http://${receipt.family === 'IPv6' ? `[${receipt.address}]` : receipt.address}:${receipt.port}`;
 }
 
@@ -364,7 +371,7 @@ async function assertViteStartupIdentity(
   }
 }
 
-function describeExit(proc: ChildProcess): string {
+export function describeExit(proc: ChildProcess): string {
   return proc.signalCode === null ? `with code ${proc.exitCode}` : `on ${proc.signalCode}`;
 }
 
@@ -461,7 +468,12 @@ export function signalTree(proc: ChildProcess, signal: NodeJS.Signals): boolean 
 
 const GROUP_DRAIN_POLL_INTERVAL_MS = 25;
 
-export async function killGracefully(proc: ChildProcess, timeoutMs = 5000): Promise<void> {
+export declare const WORKER_SERVER_HANDLE: unique symbol;
+
+export async function killGracefully(
+  proc: ChildProcess & { readonly [WORKER_SERVER_HANDLE]?: never },
+  timeoutMs = 5000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   if (proc.exitCode === null && proc.signalCode === null) {
     const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()));
