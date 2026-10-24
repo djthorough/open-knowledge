@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { ContextMenuItem } from '@/components/ui/context-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   expectVisualClassTokens,
@@ -71,6 +72,35 @@ function renderStrip(props?: {
     onPlacementChange,
     rerender: view.rerender,
   };
+}
+
+function StripWithMovingControl() {
+  const [atStart, setAtStart] = useState(false);
+  const controlRef = useRef<HTMLButtonElement>(null);
+  const control = (
+    <button ref={controlRef} type="button" aria-label="Moving control">
+      M
+    </button>
+  );
+  return (
+    <TooltipProvider>
+      <TerminalTabStrip
+        sessions={SESSIONS}
+        activeSessionId="s1"
+        onSelect={() => {}}
+        onClose={() => {}}
+        sessionKind="agent"
+        leadingControls={atStart ? control : null}
+        trailingControls={atStart ? null : control}
+        rowMenu={
+          <ContextMenuItem onSelect={() => setAtStart((current) => !current)}>
+            Move the control
+          </ContextMenuItem>
+        }
+        rowMenuFocusFallback={controlRef}
+      />
+    </TooltipProvider>
+  );
 }
 
 describe('TerminalTabStrip', () => {
@@ -415,6 +445,42 @@ describe('TerminalTabStrip', () => {
     expect(focusedTab).toBe(document.activeElement);
   });
 
+  test('when a row menu action chosen from the keyboard moves the control that opened the menu, focus lands on that control in its new place', async () => {
+    const user = userEvent.setup();
+    render(<StripWithMovingControl />);
+    const control = screen.getByRole('button', { name: 'Moving control' });
+    act(() => control.focus());
+
+    fireEvent.keyDown(control, { key: 'F10', shiftKey: true });
+    expect(await screen.findByRole('menuitem', { name: 'Move the control' })).toBe(
+      document.activeElement,
+    );
+    await user.keyboard('{Enter}');
+
+    const moved = screen.getByRole('button', { name: 'Moving control' });
+    expect(moved).not.toBe(control);
+    await waitFor(() => expect(document.activeElement).toBe(moved));
+  });
+
+  test('while a tab is being renamed, right-click and the context-menu keys in the field keep the native text menu and leave the rename open', async () => {
+    const user = userEvent.setup();
+    const { onRename } = renderStrip({ edge: 'bottom', sessionKind: 'terminal' });
+    await user.dblClick(screen.getByRole('tab', { name: 'Terminal 2' }));
+    const input = screen.getByRole('textbox', { name: 'Rename Terminal 2' });
+
+    expect(fireEvent.contextMenu(input)).toBe(true);
+    expect(fireEvent.keyDown(input, { key: 'F10', shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: 'ContextMenu' })).toBe(true);
+
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(input).toBe(document.activeElement);
+    expect(onRename).not.toHaveBeenCalled();
+
+    await user.keyboard('{Escape}');
+    fireEvent.contextMenu(screen.getByRole('tablist', { name: 'Terminal sessions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Move to right panel' })).toBeDefined();
+  });
+
   test('the right Terminal header has a named 24px dock control that moves it bottom', async () => {
     const user = userEvent.setup();
     const { onPlacementChange } = renderStrip({ edge: 'right', sessionKind: 'terminal' });
@@ -667,7 +733,7 @@ describe('TerminalTabStrip as a card top bar', () => {
     expect(row?.className).toContain('[-webkit-app-region:drag]');
   });
 
-  test('on desktop the docked strip drags the window from its empty space while every control opts out', () => {
+  test('on desktop the docked strip opts its empty space into the window drag region while every control opts out', () => {
     Object.defineProperty(window, 'okDesktop', {
       configurable: true,
       value: { config: { mode: 'editor' } },

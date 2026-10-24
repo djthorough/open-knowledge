@@ -29,7 +29,10 @@ export {
   readCardSurface,
   readContrastPair,
   readRootColor,
+  relativeLuminance,
+  rgbaBytesOf,
   type ScreenClip,
+  screenshotBrightness,
 } from './card-surface.ts';
 export { simulateCopyAndRead, simulateCutAndRead } from './clipboard.ts';
 export { resetContentToFixtureBaseline } from './content-reset.ts';
@@ -101,7 +104,15 @@ export {
   arrangeTerminalAlone,
   CHAT_PANE_CARD,
   type DesktopLayoutOptions,
+  DOCK_WORKSPACE,
+  type DockSeamDrag,
+  type DockUnitRect,
+  dockSeam,
+  dockUnit,
+  dockUnitRect,
+  dragDockSeam,
   EDITOR_PANE_CARD,
+  expectDockUnitOff,
   expectEditorHidden,
   type HeaderPane,
   headerPaneButton,
@@ -183,6 +194,7 @@ export {
   type ThemeFadeProbeWindow,
   type ThemeFadeReport,
 } from './theme-fade.ts';
+export { threadRosterDelivered } from './thread-roster.ts';
 export {
   createMp3Buffer,
   createMp4Buffer,

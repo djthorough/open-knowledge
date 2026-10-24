@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProblemType } from '@inkeep/open-knowledge-core';
 import { test as base } from '@playwright/test';
-import { resetContentToFixtureBaseline } from './content-reset.ts';
+import { resetContentToFixtureBaseline, resetTemplateInventory } from './content-reset.ts';
 import { coverageFixture, type E2eCoverage } from './e2e-coverage/e2e-coverage.ts';
 import { gotoWhileLoadProgresses, requireDeadlineAt } from './load-progress.ts';
 import { type WorkerServing, workerServingFor } from './prebuilt/prebuilt-serving.ts';
@@ -56,15 +56,21 @@ export function isConcurrentOverwriteRefusal(error: unknown): boolean {
 }
 
 async function problemError(res: Response, message: string): Promise<ProblemError> {
-  let body: { type?: unknown } | null = null;
+  let body: { type?: unknown; title?: unknown; detail?: unknown } | null = null;
   let parseFailure: unknown;
   try {
-    body = (await res.json()) as { type?: unknown };
+    body = (await res.json()) as { type?: unknown; title?: unknown; detail?: unknown };
   } catch (error) {
     parseFailure = error;
   }
+  const problem = [body?.type, body?.title, body?.detail].filter(
+    (part): part is string => typeof part === 'string' && part.length > 0,
+  );
+  const fullMessage = problem.length > 0 ? `${message} (${problem.join('; ')})` : message;
   const err: ProblemError =
-    parseFailure === undefined ? new Error(message) : new Error(message, { cause: parseFailure });
+    parseFailure === undefined
+      ? new Error(fullMessage)
+      : new Error(fullMessage, { cause: parseFailure });
   err.status = res.status;
   if (typeof body?.type === 'string') err.type = body.type;
   return err;
@@ -102,9 +108,11 @@ type TestFixtures = {
   api: ApiHelpers;
   serverLeaseCheck: undefined;
   e2eCoverage: E2eCoverage;
+  templateInventory: undefined;
 };
 
 export const WORKER_SERVER_BUDGET_TOTAL_MS = 240_000;
+const API_CALL_TIMEOUT_MS = 30_000;
 
 export const WORKER_SERVER_BUDGET_RESERVES = {
   apiConfig: 2_000,
@@ -519,6 +527,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   serverLease: [leaseWorkerServer, { scope: 'worker', timeout: WORKER_SERVER_BUDGET_TOTAL_MS }],
   serverLeaseCheck: [checkServerLease, { auto: true }],
   e2eCoverage: [coverageFixture, { auto: true }],
+  templateInventory: [
+    async ({ workerServer }, use) => {
+      await resetTemplateInventory(workerServer.baseURL, API_CALL_TIMEOUT_MS);
+      await use(undefined);
+    },
+    { auto: true },
+  ],
   page: async ({ page, e2eCoverage }, use) => {
     e2eCoverage.watchContext(page.context());
     await e2eCoverage.watchPage(page);
@@ -670,7 +685,6 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   api: async ({ workerServer }, use) => {
     const { baseURL } = workerServer;
-    const API_CALL_TIMEOUT_MS = 30_000;
     async function post(path: string, body?: unknown): Promise<Response> {
       try {
         return await fetch(`${baseURL}${path}`, {
@@ -689,6 +703,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         }
         throw err;
       }
+    }
+    async function postTestReset(
+      query: { scope: 'document'; docName?: string } | { scope: 'presence' },
+    ): Promise<void> {
+      const search = new URLSearchParams(query).toString();
+      const res = await post(`/api/test-reset?${search}`);
+      if (!res.ok) throw await problemError(res, `test-reset?${search} failed: ${res.status}`);
     }
     const helpers: ApiHelpers = {
       async createPage(path: string): Promise<void> {
@@ -722,12 +743,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         }
       },
       async testReset(docName?: string): Promise<void> {
-        const res = await post(
-          docName ? `/api/test-reset?docName=${encodeURIComponent(docName)}` : '/api/test-reset',
-        );
-        if (!res.ok) {
-          throw new Error(`test-reset failed${docName ? ` for ${docName}` : ''}: ${res.status}`);
-        }
+        await postTestReset({ scope: 'document', ...(docName !== undefined ? { docName } : {}) });
       },
       async seedDocs(docs: Array<{ name: string; markdown: string }>): Promise<void> {
         await resetContentToFixtureBaseline(baseURL, workerServer.contentDir);
@@ -737,6 +753,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           await helpers.createPage(/\.(md|mdx)$/i.test(d.name) ? d.name : `${d.name}.md`);
         }
         for (const d of docs) await helpers.replaceDoc(docNameOf(d.name), d.markdown);
+        await postTestReset({ scope: 'presence' });
         await waitForSeededPagesSettled(
           baseURL,
           docs.map((d) => docNameOf(d.name)),

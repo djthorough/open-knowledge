@@ -243,6 +243,7 @@ export {
   fallbackPaths,
   type GitDetected,
   GitNotAvailableError,
+  GitProbeTimeoutError,
   GitTooOldError,
   type InstallGuidance,
   type InstallOption,
@@ -497,9 +498,9 @@ export {
   ProjectGitInitError,
 } from './project-git.ts';
 export {
-  type BlockConflict,
   CONFLICT_MARKER_RE,
   containsConflictMarkers,
+  type KeptBlockPair,
   type ReconcileInput,
   type ReconcileOutcome,
   reconcile,

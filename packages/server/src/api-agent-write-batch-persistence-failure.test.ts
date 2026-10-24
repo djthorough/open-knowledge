@@ -20,6 +20,7 @@ import {
   DocumentDurabilityState,
   OK_DOC_REMOVED,
   OK_STORE_DISCARDED,
+  OK_STORE_HELD,
   OK_STORE_REFUSED,
 } from './document-durability-state.ts';
 
@@ -72,6 +73,7 @@ afterEach(async () => {
 function createExtension() {
   return createApiExtension({
     hocuspocus,
+    refreshDocumentsFromDisk: async () => ({ checked: 0, found: 0 }),
     durabilityState,
     sessionManager,
     contentDir,
@@ -136,6 +138,41 @@ describe('agent-write-batch — store-refused flush failure rendering', () => {
     expect(results[0]?.error?.detail).toContain('recovery buffer');
     expect(results[0]?.error?.detail).toContain('filesystem fault');
     expect(results[0]?.error?.detail).not.toContain('will be lost');
+  });
+
+  test('a held save renders the save-held contract on the batch endpoint', async () => {
+    const docName = 'batch-held';
+    durabilityState.recordStoreFailure(docName, {
+      code: OK_STORE_HELD,
+      message: `${docName} was not saved: its file changed and could not be merged, so a conflict was raised`,
+      held: { reason: 'pending-conflict' },
+    });
+
+    const response = await postBatch({
+      docs: [{ docName, markdown: '# Batch held\n\nUpdated body.\n', position: 'replace' }],
+      agentId: 'claude-1',
+      agentName: 'Claude',
+    });
+
+    expect(response.status).toBe(200);
+    const { results } = JSON.parse(response.body) as {
+      results: Array<{ status: string; error?: Record<string, unknown>; outcome?: string }>;
+    };
+    expect(results[0]).toMatchObject({
+      status: 'error',
+      outcome: 'refused',
+      saved: false,
+      nextStep: 'none',
+    });
+    expect(results[0]?.error).toMatchObject({
+      type: 'urn:ok:error:save-held',
+      reason: 'pending-conflict',
+    });
+    expect(results[0]?.error).not.toHaveProperty('outcome');
+    expect(results[0]?.error).not.toHaveProperty('saved');
+    expect(results[0]?.error).not.toHaveProperty('nextStep');
+    expect(String(results[0]?.error?.detail)).toContain('tell the user which file it is');
+    expect(String(results[0]?.error?.detail)).toContain('Do not repeat this write');
   });
 
   test('a doc-removed flush failure keeps the doc-removed contract on the batch endpoint', async () => {

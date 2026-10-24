@@ -367,7 +367,7 @@ function admitFocusedTextCaret(view: PMEditorView, event: KeyboardEvent): void {
 }
 
 function buildEditorOptions(args: BuildEditorOptionsArgs): Partial<EditorOptions> {
-  const { provider, clipboard, ctorStart } = args;
+  const { provider, placeholder, clipboard, ctorStart } = args;
   return {
     onBeforeCreate: ({ editor }) => {
       editorCtorStartTimes.set(editor, ctorStart);
@@ -390,6 +390,7 @@ function buildEditorOptions(args: BuildEditorOptionsArgs): Partial<EditorOptions
     editorProps: {
       attributes: {
         class: 'pt-4 pb-4 h-full',
+        ...(placeholder === undefined ? {} : { 'data-empty-placeholder': placeholder }),
       },
       clipboardTextParser: (text, _context, _plain, view) => {
         const json = clipboard.mdManager.parse(text);
@@ -1263,11 +1264,9 @@ const TiptapEditorChrome: FC<TiptapEditorChromeProps> = ({
       data-agent-flash-position="append"
       data-agent-flash-agent-id=""
     >
-      {}
       {!isSourceMode && editorPaneOnScreen && (
         <BubbleMenuBar editor={editor} shortcutEnabled={docName === activeDocName} />
       )}
-      {}
       {!isSourceMode && (
         <CommentsBoundary>
           <CommentSelectionAffordance
@@ -1280,8 +1279,6 @@ const TiptapEditorChrome: FC<TiptapEditorChromeProps> = ({
         </CommentsBoundary>
       )}
       {!isSourceMode && <TableCellHandles editor={editor} />}
-      {}
-      {}
       <div ref={portalSlotRef} style={{ display: 'contents' }} />
       {createPortal(
         // oxlint-disable-next-line ok/no-unportaled-editor-content -- canonical portaled site — H6 fix per PRECEDENTS.md #44
@@ -1292,13 +1289,14 @@ const TiptapEditorChrome: FC<TiptapEditorChromeProps> = ({
         />,
         portalTarget,
       )}
-      {}
       <SelectionAnnouncer editor={editor} />
-      {/**
-       * RawMdxFallback renders inline via `RawMdxFallbackCMView` (precedent #30) and never
-       * registers with InteractionLayer.
-       */}
-      <InteractionLayerView store={getInteractionLayer(editor).store} />
+      <InteractionLayerView
+        /**
+         * RawMdxFallback renders inline via `RawMdxFallbackCMView` (precedent #30) and never
+         * registers with InteractionLayer.
+         */
+        store={getInteractionLayer(editor).store}
+      />
     </div>
   );
 };

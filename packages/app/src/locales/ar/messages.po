@@ -585,6 +585,18 @@ msgstr "تعذّر تحديث {failed} من {0} تعليقات."
 msgid "{failedCount, plural, one {1 file failed to upload} other {{failedCount} files failed to upload}}"
 msgstr "{failedCount, plural, zero {فشل رفع {failedCount} ملف} one {فشل رفع ملف واحد} two {فشل رفع ملفين} few {فشل رفع {failedCount} ملفات} many {فشل رفع {failedCount} ملفًا} other {فشل رفع {failedCount} ملف}}"
 
+msgid "{file} was not saved because it changed outside OpenKnowledge to content that is not UTF-8 text, so the file was not written over. Your edits stay here, and saving is tried again when the file changes."
+msgstr "لم يُحفظ {file} لأنه تغيّر خارج OpenKnowledge إلى محتوى ليس نصًا بترميز UTF-8، لذا لم يُكتب فوق الملف. تبقى تعديلاتك هنا، وستُعاد محاولة الحفظ عندما يتغيّر الملف."
+
+msgid "{file} was not saved because it could not be read to compare it with outside changes, so the file was not written over. Your edits stay here, and saving is tried again."
+msgstr "لم يُحفظ {file} لأنه تعذّرت قراءته لمقارنته بالتغييرات الخارجية، لذا لم يُكتب فوق الملف. تبقى تعديلاتك هنا، وستُعاد محاولة الحفظ."
+
+msgid "{file} was not saved because it kept changing outside OpenKnowledge. Your edits stay here, and saving is tried again."
+msgstr "لم يُحفظ {file} لأنه ظل يتغيّر خارج OpenKnowledge. تبقى تعديلاتك هنا، وستُعاد محاولة الحفظ."
+
+msgid "{file} was not saved. It changed outside OpenKnowledge, and that version could not be kept in history or in the backup folder, so the file was not written over. Your edits stay here, and saving is tried again."
+msgstr "لم يُحفظ {file}. تغيّر خارج OpenKnowledge، وتعذّر الاحتفاظ بتلك النسخة في السجل أو في مجلد النسخ الاحتياطية، لذا لم يُكتب فوق الملف. تبقى تعديلاتك هنا، وستُعاد محاولة الحفظ."
+
 msgid "{fileCount, plural, one {# file} other {# files}}"
 msgstr "{fileCount, plural, zero {# ملف} one {ملف واحد} two {ملفان} few {# ملفات} many {# ملفًا} other {# ملف}}"
 
@@ -951,6 +963,15 @@ msgstr "قد تبقى نسخة في {scopeLabel} من: {names}. لا تحذف أ
 
 msgid "A copy of \"{name}\" was kept in {scopeLabel} on purpose. Don't delete it before comparing it with the original: it may hold the only copy of files the failed move already removed."
 msgstr "تم الاحتفاظ بنسخة من “{name}” في {scopeLabel} عن قصد. لا تحذفها قبل مقارنتها بالنسخة الأصلية: فقد تحتوي على النسخة الوحيدة من الملفات التي حذفها النقل الفاشل بالفعل."
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side."
+msgstr "تم التراجع عن حذف في {fileName} لأن الجهة الأخرى غيّرت النص نفسه."
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side. The earlier versions are in the timeline."
+msgstr "تم التراجع عن حذف في {fileName} لأن الجهة الأخرى غيّرت النص نفسه. النسخ السابقة موجودة في الخط الزمني."
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side. The earlier versions were saved to the document's history."
+msgstr "تم التراجع عن حذف في {fileName} لأن الجهة الأخرى غيّرت النص نفسه. حُفظت النسخ السابقة في سجل المستند."
 
 msgid "A DIFFERENT skill named like this one lives at {0} — that folder is not this skill. Rename or delete one of the two to resolve."
 msgstr "توجد مهارة مختلفة بالاسم نفسه في {0} — ذلك المجلد ليس هذه المهارة. أعد تسمية إحداهما أو احذفها للحل."
@@ -1345,9 +1366,6 @@ msgstr "وضع الوكيل"
 msgid "Agent panel"
 msgstr "لوحة الوكيل"
 
-msgid "Agent panel closed to keep Terminal readable."
-msgstr "أُغلقت لوحة الوكيل لإبقاء Terminal سهل القراءة."
-
 msgid "Agent settings"
 msgstr "إعدادات الوكيل"
 
@@ -1450,6 +1468,21 @@ msgstr "يجري بالفعل بدء محادثة مع هذا الوكيل — �
 
 msgid "Always included"
 msgstr "مُدرج دائمًا"
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version is in the timeline."
+msgstr "تعذّر دمج تغيير خارجي في {fileName}، لذا بقيت هذه النسخة. النسخة الخارجية موجودة في الخط الزمني."
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version was saved to {backupPath}."
+msgstr "تعذّر دمج تغيير خارجي في {fileName}، لذا بقيت هذه النسخة. حُفظت النسخة الخارجية في {backupPath}."
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version was saved to the document's history."
+msgstr "تعذّر دمج تغيير خارجي في {fileName}، لذا بقيت هذه النسخة. حُفظت النسخة الخارجية في سجل المستند."
+
+msgid "An outside change to {fileName} was not valid settings, so your settings stayed. A copy of the outside version was kept in this project's history, which the app cannot show yet."
+msgstr "لم يكن التغيير الخارجي في {fileName} إعدادات صالحة، لذا بقيت إعداداتك. احتُفظ بنسخة من النسخة الخارجية في سجل هذا المشروع، ولا يستطيع التطبيق عرضه بعد."
+
+msgid "An outside change to {fileName} was not valid settings, so your settings stayed. A copy of the outside version was saved to {backupPath}."
+msgstr "لم يكن التغيير الخارجي في {fileName} إعدادات صالحة، لذا بقيت إعداداتك. حُفظت نسخة من النسخة الخارجية في {backupPath}."
 
 msgid "An unexpected error occurred."
 msgstr "حدث خطأ غير متوقع."
@@ -1786,6 +1819,9 @@ msgstr "يصبح محتوى المستند عندما ينشئ أحدهم مست
 msgid "Before"
 msgstr "قبل"
 
+msgid "Before an outside change was merged"
+msgstr "قبل دمج تغيير خارجي"
+
 msgid "Before syncing, set your identity for git commits:"
 msgstr "قبل المزامنة، اضبط هويتك لإيداعات git:"
 
@@ -1849,6 +1885,9 @@ msgstr "سيقرأ الوكيلان في النهاية كل ما في {keep}."
 
 msgid "Both versions are identical. Choosing Accept current leaves OpenKnowledge's protection on, so another save of the older version is refused again. Choosing Accept incoming turns that protection off."
 msgstr "النسختان متطابقتان. اختيار قبول الحالي يُبقي حماية OpenKnowledge مفعّلة، لذا سيُرفض مجددًا أي حفظ آخر للنسخة الأقدم. اختيار قبول الوارد يوقف تلك الحماية."
+
+msgid "Both versions were kept in {fileName}. It changed outside OpenKnowledge in the same place as here, so the outside version is directly under this one."
+msgstr "تم الاحتفاظ بالنسختين في {fileName}. تغيّر الملف خارج OpenKnowledge في المكان نفسه الذي تغيّر فيه هنا، لذا تظهر النسخة الخارجية أسفل هذه النسخة مباشرة."
 
 msgid "Branch"
 msgstr "فرع"
@@ -2033,6 +2072,9 @@ msgstr "أحرف"
 
 msgid "Chat history"
 msgstr "سجل الدردشة"
+
+msgid "Chat history could not be loaded. Try opening the chat again from Chat history."
+msgstr "تعذّر تحميل سجل الدردشة. حاول فتح الدردشة مجددًا من سجل الدردشة."
 
 msgid "Chat name"
 msgstr "اسم المحادثة"
@@ -3986,6 +4028,12 @@ msgstr "تُطبّق التعديلات مباشرة. تحدد السمة الو
 msgid "Edits at the source land here — no copy-paste drift."
 msgstr "تصل التعديلات من المصدر إلى هنا — بلا انحراف نسخ ولصق."
 
+msgid "Edits to {fileName} kept from the last time this branch was open could not be merged, so the file's version stayed. Those edits are in the timeline."
+msgstr "تعذّر دمج التعديلات على {fileName} المحفوظة منذ آخر مرة كان فيها هذا الفرع مفتوحًا، لذا بقيت نسخة الملف. هذه التعديلات موجودة في الخط الزمني."
+
+msgid "Edits to {fileName} kept from the last time this branch was open could not be merged, so the file's version stayed. Those edits were saved to the document's history."
+msgstr "تعذّر دمج التعديلات على {fileName} المحفوظة منذ آخر مرة كان فيها هذا الفرع مفتوحًا، لذا بقيت نسخة الملف. حُفظت هذه التعديلات في سجل المستند."
+
 msgid "Element fields"
 msgstr "حقول العنصر"
 
@@ -4593,6 +4641,9 @@ msgstr "الملف {identity}. انتقل إلى المرجع."
 
 msgid "File already exists"
 msgstr "الملف موجود بالفعل"
+
+msgid "File change notice"
+msgstr "إشعار تغيير الملف"
 
 msgid "File drop zone"
 msgstr "منطقة إفلات الملفات"
@@ -6306,14 +6357,44 @@ msgstr "نقل {0} مهارات إلى المشروع"
 msgid "Move across"
 msgstr "تنتقل"
 
+msgid "Move Agents to the bottom edge of the window"
+msgstr "نقل الوكلاء إلى الحافة السفلية للنافذة"
+
+msgid "Move Agents to the left edge of the window"
+msgstr "نقل الوكلاء إلى الحافة اليسرى للنافذة"
+
+msgid "Move Agents to the right edge of the window"
+msgstr "نقل الوكلاء إلى الحافة اليمنى للنافذة"
+
+msgid "Move Agents to the top edge of the window"
+msgstr "نقل الوكلاء إلى الحافة العلوية للنافذة"
+
 msgid "Move between table cells"
 msgstr "التنقل بين خلايا الجدول"
 
 msgid "Move block"
 msgstr "نقل الكتلة"
 
+msgid "Move chat history to the left"
+msgstr "نقل سجل الدردشة إلى اليسار"
+
+msgid "Move chat history to the right"
+msgstr "نقل سجل الدردشة إلى اليمين"
+
 msgid "Move down"
 msgstr "تحريك لأسفل"
+
+msgid "Move Editor to the bottom edge of the window"
+msgstr "نقل المحرر إلى الحافة السفلية للنافذة"
+
+msgid "Move Editor to the left edge of the window"
+msgstr "نقل المحرر إلى الحافة اليسرى للنافذة"
+
+msgid "Move Editor to the right edge of the window"
+msgstr "نقل المحرر إلى الحافة اليمنى للنافذة"
+
+msgid "Move Editor to the top edge of the window"
+msgstr "نقل المحرر إلى الحافة العلوية للنافذة"
 
 msgid "Move OpenKnowledge.app to the Trash"
 msgstr "انقل OpenKnowledge.app إلى سلة المهملات"
@@ -6329,6 +6410,18 @@ msgstr "نقل Terminal إلى الأسفل"
 
 msgid "Move Terminal to right"
 msgstr "نقل Terminal إلى اليمين"
+
+msgid "Move Terminal to the bottom edge of the window"
+msgstr "نقل Terminal إلى الحافة السفلية للنافذة"
+
+msgid "Move Terminal to the left edge of the window"
+msgstr "نقل Terminal إلى الحافة اليسرى للنافذة"
+
+msgid "Move Terminal to the right edge of the window"
+msgstr "نقل Terminal إلى الحافة اليمنى للنافذة"
+
+msgid "Move Terminal to the top edge of the window"
+msgstr "نقل Terminal إلى الحافة العلوية للنافذة"
 
 msgid "Move the current block up or down. In lists, move the current item or selected items."
 msgstr "انقل الكتلة الحالية إلى أعلى أو أسفل. في القوائم، انقل العنصر الحالي أو العناصر المحددة."
@@ -6969,6 +7062,9 @@ msgstr "غير مثبَّت · ملفات OpenKnowledge موجودة"
 msgid "Not installed in this project yet."
 msgstr "لم تُثبَّت في هذا المشروع بعد."
 
+msgid "Not merged"
+msgstr "لم يُدمج"
+
 #. Declines the first-visit skill offer; the row on the page keeps it available
 msgid "Not now"
 msgstr "ليس الآن"
@@ -7347,6 +7443,9 @@ msgstr "افتح هذا الرابط في تبويب جديد واطوِ الر�
 msgid "Open this settings dialog."
 msgstr "افتح حوار الإعدادات هذا."
 
+msgid "Open timeline"
+msgstr "فتح الخط الزمني"
+
 msgid "Open visual-editor find with replace controls expanded."
 msgstr "افتح بحث المحرر المرئي مع توسيع عناصر الاستبدال."
 
@@ -7653,6 +7752,9 @@ msgstr "خارج أي كتلة"
 
 msgid "Outside this repository's OpenKnowledge worktrees folder"
 msgstr "خارج مجلد أشجار العمل الخاص بـ OpenKnowledge في هذا المستودع"
+
+msgid "Outside version"
+msgstr "النسخة الخارجية"
 
 msgid "Outside what Open Knowledge commits."
 msgstr "خارج نطاق ما يودعه Open Knowledge."
@@ -8719,14 +8821,14 @@ msgstr "إعادة تعيين مرشحات العرض"
 msgid "Resize {handleKey}"
 msgstr "تغيير حجم {handleKey}"
 
+msgid "Resize {pane}"
+msgstr "تغيير حجم {pane}"
+
 msgid "Resize document panel"
 msgstr "تغيير حجم لوحة المستند"
 
 msgid "Resize skills panel"
 msgstr "تغيير حجم لوحة المهارات"
-
-msgid "Resize terminal"
-msgstr "تغيير حجم الطرفية"
 
 msgid "Resolve conflict in your terminal"
 msgstr "حل التعارض في طرفيتك"
@@ -9385,6 +9487,12 @@ msgstr "فشل تحميل الإعدادات"
 msgid "Settings for this project. Some are shared with every collaborator through git; others apply only on this computer."
 msgstr "إعدادات هذا المشروع. بعضها يُشارك مع كل متعاون عبر git، وبعضها ينطبق على هذا الكمبيوتر فقط."
 
+msgid "Settings in {fileName} changed outside OpenKnowledge and now apply. A copy of the change you were making was kept in this project's history, which the app cannot show yet."
+msgstr "تغيّرت الإعدادات في {fileName} خارج OpenKnowledge وأصبحت سارية الآن. احتُفظ بنسخة من التغيير الذي كنت تجريه في سجل هذا المشروع، ولا يستطيع التطبيق عرضه بعد."
+
+msgid "Settings in {fileName} changed outside OpenKnowledge and now apply. A copy of the change you were making was saved to {backupPath}."
+msgstr "تغيّرت الإعدادات في {fileName} خارج OpenKnowledge وأصبحت سارية الآن. حُفظت نسخة من التغيير الذي كنت تجريه في {backupPath}."
+
 msgid "Settings sections"
 msgstr "أقسام الإعدادات"
 
@@ -10028,6 +10136,9 @@ msgstr "قائمة الاقتراحات مفتوحة"
 msgid "Summarize everything I changed this week"
 msgstr "لخّص كل ما غيّرته هذا الأسبوع"
 
+msgid "Swap file sidebar and document panel"
+msgstr "تبديل موضعي الشريط الجانبي للملفات ولوحة المستند"
+
 msgid "Switch and update branch"
 msgstr "تبديل الفرع وتحديثه"
 
@@ -10250,9 +10361,6 @@ msgstr "الطرفية {0}"
 
 msgid "Terminal access isn't enabled for this project."
 msgstr "الوصول إلى الطرفية غير مفعّل لهذا المشروع."
-
-msgid "Terminal closed to make room for the agent panel."
-msgstr "أُغلق Terminal لإفساح المجال للوحة الوكيل."
 
 msgid "Terminal disabled"
 msgstr "الطرفية معطّلة"
@@ -11195,14 +11303,14 @@ msgstr "بدّل تنسيق الخط في المنتصف."
 msgid "Toggle Terminal in its current dock."
 msgstr "أظهر Terminal أو أخفه في موضع الإرساء الحالي."
 
-msgid "Toggle the left file sidebar."
-msgstr "بدّل شريط الملفات الجانبي الأيسر."
+msgid "Toggle the document panel."
+msgstr "بدّل لوحة المستند."
+
+msgid "Toggle the file sidebar."
+msgstr "بدّل شريط الملفات الجانبي."
 
 msgid "Toggle the right agents panel, where agent conversations live."
 msgstr "بدّل لوحة الوكلاء اليمنى، حيث تعيش محادثات الوكلاء."
-
-msgid "Toggle the right document panel."
-msgstr "بدّل لوحة المستند اليمنى."
 
 msgid "Toggle thumbnails"
 msgstr "تبديل الصور المصغّرة"
@@ -11666,6 +11774,9 @@ msgstr "قيم {keyName}"
 msgctxt "settings search keyword"
 msgid "version"
 msgstr "الإصدار"
+
+msgid "Version in OpenKnowledge"
+msgstr "النسخة في OpenKnowledge"
 
 msgid "via {viaTags}"
 msgstr "عبر {viaTags}"

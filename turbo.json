@@ -61,8 +61,25 @@
       "dependsOn": []
     },
     "lint": {},
+    "types": {
+      "dependsOn": ["^types"]
+    },
+    "@inkeep/open-knowledge#types": {
+      "dependsOn": ["^types", "build"]
+    },
+    "@inkeep/open-knowledge-native-config#types": {
+      "dependsOn": ["^types", "build"]
+    },
     "typecheck": {
-      "dependsOn": ["^build", "//#typecheck:no-net-connect"]
+      "dependsOn": ["^types", "//#typecheck:no-net-connect", "//#typecheck:lint-plugins"]
+    },
+    "//#typecheck:lint-plugins": {
+      "inputs": [
+        "lint-plugins/ok-rules/**/*.ts",
+        "lint-plugins/ok-rules/tsconfig.json",
+        "test-support/*.ts",
+        "tsconfig.json"
+      ]
     },
     "//#typecheck:no-net-connect": {
       "inputs": [
@@ -402,12 +419,12 @@
     "test:e2e": {
       "dependsOn": ["^build", "build"],
       "cache": false,
-      "passThroughEnv": ["OK_TEST_E2E_SERVING", "OK_E2E_COVERAGE_DIR"]
+      "passThroughEnv": ["OK_TEST_E2E_SERVING", "OK_E2E_COVERAGE_DIR", "OK_E2E_TRACE_SNAPSHOTS"]
     },
     "@inkeep/open-knowledge-app#test:e2e": {
       "dependsOn": ["^build", "build", "@inkeep/open-knowledge#build"],
       "cache": false,
-      "passThroughEnv": ["OK_TEST_E2E_SERVING", "OK_E2E_COVERAGE_DIR"]
+      "passThroughEnv": ["OK_TEST_E2E_SERVING", "OK_E2E_COVERAGE_DIR", "OK_E2E_TRACE_SNAPSHOTS"]
     },
     "test:perf": {
       "dependsOn": [],

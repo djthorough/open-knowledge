@@ -236,7 +236,7 @@ function SortableTab({
     sortableKeyDown?.(event);
   }
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: dnd-kit attributes inject role and tabIndex; this composes the sortable key listener.
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- dnd-kit attributes inject role and tabIndex; this composes the sortable key listener.
     <div
       ref={composedRef}
       data-editor-tab-sortable=""
@@ -689,6 +689,7 @@ interface EditorTabsProps {
   paneId: string;
   onSplitComplete?: (paneId: string, tabId: string) => void;
   leading?: ReactNode;
+  trailing?: ReactNode;
 }
 
 export function EditorTabs({
@@ -696,6 +697,7 @@ export function EditorTabs({
   paneId,
   onSplitComplete,
   leading,
+  trailing,
 }: EditorTabsProps) {
   const { t } = useLingui();
   const context = useDocumentContext();
@@ -1371,6 +1373,7 @@ export function EditorTabs({
           </TooltipContent>
         </Tooltip>
       </div>
+      {trailing}
       {skillActions.dialogs}
     </div>
   );

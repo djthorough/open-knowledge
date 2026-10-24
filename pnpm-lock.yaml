@@ -147,7 +147,7 @@ packageExtensionsChecksum: sha256-dqn6jwuY3uAC75dMPBWd+w9GVkhNUrdfgRsY6AOXEhY=
 
 patchedDependencies:
   '@handlewithcare/remark-prosemirror@0.1.5': a6b60cc8640e04973be2c8123e0dbd73156b54388a57cd2b76191c2fd8ac2865
-  '@hocuspocus/provider@4.0.0-rc.1': 3e4275acfde912e2ad1bfb9a78db31a311e239d733af8a78dc6b3038343287fd
+  '@hocuspocus/provider@4.0.0-rc.1': ccc5d9846f114c5d0feb696dbe4a9432804b6f5de734bb70d2d6f138b2353b95
   '@lingui/core@6.5.0': 126db40cb2224e90abf5f063d3aa005eb1bc84796d77216d5a9e52d5cd28a656
   '@pierre/diffs@1.3.6': c823ecf3ff76ff3c3e71f441f2a7286aa2aae8e91b4d5e5a10554d8441d6c739
   '@pierre/trees@1.0.0-beta.4': 86ac804ac75d9f365ee9ef918460463a211ac5201ebc3cf04fc0534c5b3adf88
@@ -157,6 +157,7 @@ patchedDependencies:
   cmdk@1.1.1: b06bc76a3813cc8142d7f75f85020a8ebff65a0ee84fac816da25986da6aa2a1
   react-medium-image-zoom@5.4.3: d59ed459a6ae570e843d0829f844dde24c0697b883351b198034f47606766517
   react-resizable-panels@4.12.1: bd17d922d19720e50c1805aeb59f56599bf2b15eefbb6e93fc84f7a548793f77
+  sirv@3.0.2: c18b28f0bc922fd0abed32545bae498c471d8f715f8d5fac40e84840d4e23842
   y-indexeddb@9.0.12: bc95fab9af70f704280673eafabcb5a40cc180fd5122d62e6c44cac2f7076245
   y-prosemirror@1.3.7: b77fc38bdf246f08f73b6bc5d12ec24d29408b663f0a4224758d3f776ef124e7
 
@@ -443,7 +444,7 @@ importers:
         version: 5.2.8
       '@hocuspocus/provider':
         specifier: 4.0.0-rc.1
-        version: 4.0.0-rc.1(patch_hash=3e4275acfde912e2ad1bfb9a78db31a311e239d733af8a78dc6b3038343287fd)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        version: 4.0.0-rc.1(patch_hash=ccc5d9846f114c5d0feb696dbe4a9432804b6f5de734bb70d2d6f138b2353b95)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
       '@hookform/resolvers':
         specifier: ^5.0.0
         version: 5.4.0(react-hook-form@7.81.0(react@19.2.5))(zod@4.4.3)
@@ -795,7 +796,7 @@ importers:
         version: 11.0.0(supports-color@7.2.0)
       sirv:
         specifier: ^3.0.2
-        version: 3.0.2
+        version: 3.0.2(patch_hash=c18b28f0bc922fd0abed32545bae498c471d8f715f8d5fac40e84840d4e23842)
       size-limit:
         specifier: ^12.1.0
         version: 12.1.0(jiti@2.7.0)
@@ -1372,7 +1373,7 @@ importers:
         version: 3.36.0(supports-color@7.2.0)
       sirv:
         specifier: ^3.0.1
-        version: 3.0.2
+        version: 3.0.2(patch_hash=c18b28f0bc922fd0abed32545bae498c471d8f715f8d5fac40e84840d4e23842)
       ws:
         specifier: ^8.20.0
         version: 8.21.0
@@ -13424,7 +13425,7 @@ snapshots:
     dependencies:
       lib0: 0.2.117
 
-  '@hocuspocus/provider@4.0.0-rc.1(patch_hash=3e4275acfde912e2ad1bfb9a78db31a311e239d733af8a78dc6b3038343287fd)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
+  '@hocuspocus/provider@4.0.0-rc.1(patch_hash=ccc5d9846f114c5d0feb696dbe4a9432804b6f5de734bb70d2d6f138b2353b95)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)':
     dependencies:
       '@hocuspocus/common': 4.3.0
       '@lifeomic/attempt': 3.1.0
@@ -17283,7 +17284,7 @@ snapshots:
       '@vitest/utils': 5.0.3
       magic-string: 1.4.2
       pngjs: 7.0.0
-      sirv: 3.0.2
+      sirv: 3.0.2(patch_hash=c18b28f0bc922fd0abed32545bae498c471d8f715f8d5fac40e84840d4e23842)
       tinyrainbow: 3.2.0
       vitest: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.0.8(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       ws: 8.22.0
@@ -17314,7 +17315,7 @@ snapshots:
       fflate: 0.8.3
       flatted: 3.4.4
       pathe: 2.0.3
-      sirv: 3.0.2
+      sirv: 3.0.2(patch_hash=c18b28f0bc922fd0abed32545bae498c471d8f715f8d5fac40e84840d4e23842)
       tinyrainbow: 3.2.0
       vitest: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.0.8(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
@@ -23071,7 +23072,7 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  sirv@3.0.2:
+  sirv@3.0.2(patch_hash=c18b28f0bc922fd0abed32545bae498c471d8f715f8d5fac40e84840d4e23842):
     dependencies:
       '@polka/url': 1.0.0-next.29
       mrmime: 2.0.1

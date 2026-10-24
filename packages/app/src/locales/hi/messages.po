@@ -585,6 +585,18 @@ msgstr "{0} में से {failed} टिप्पणियाँ अपड�
 msgid "{failedCount, plural, one {1 file failed to upload} other {{failedCount} files failed to upload}}"
 msgstr "{failedCount, plural, one {1 फ़ाइल अपलोड नहीं हो सकी} other {{failedCount} फ़ाइलें अपलोड नहीं हो सकीं}}"
 
+msgid "{file} was not saved because it changed outside OpenKnowledge to content that is not UTF-8 text, so the file was not written over. Your edits stay here, and saving is tried again when the file changes."
+msgstr "{file} सहेजी नहीं गई, क्योंकि इसे OpenKnowledge के बाहर ऐसी सामग्री में बदला गया जो UTF-8 टेक्स्ट नहीं है, इसलिए फ़ाइल को ओवरराइट नहीं किया गया। आपके संपादन यहीं बने रहेंगे, और फ़ाइल बदलने पर सहेजने की फिर से कोशिश की जाएगी।"
+
+msgid "{file} was not saved because it could not be read to compare it with outside changes, so the file was not written over. Your edits stay here, and saving is tried again."
+msgstr "{file} सहेजी नहीं गई, क्योंकि बाहरी बदलावों से तुलना करने के लिए इसे पढ़ा नहीं जा सका, इसलिए फ़ाइल को ओवरराइट नहीं किया गया। आपके संपादन यहीं बने रहेंगे, और सहेजने की फिर से कोशिश की जाएगी।"
+
+msgid "{file} was not saved because it kept changing outside OpenKnowledge. Your edits stay here, and saving is tried again."
+msgstr "{file} सहेजी नहीं गई, क्योंकि यह OpenKnowledge के बाहर बार-बार बदलती रही। आपके संपादन यहीं बने रहेंगे, और सहेजने की फिर से कोशिश की जाएगी।"
+
+msgid "{file} was not saved. It changed outside OpenKnowledge, and that version could not be kept in history or in the backup folder, so the file was not written over. Your edits stay here, and saving is tried again."
+msgstr "{file} सहेजी नहीं गई। इसे OpenKnowledge के बाहर बदला गया, और वह संस्करण न इतिहास में रखा जा सका न बैकअप फ़ोल्डर में, इसलिए फ़ाइल को ओवरराइट नहीं किया गया। आपके संपादन यहीं बने रहेंगे, और सहेजने की फिर से कोशिश की जाएगी।"
+
 msgid "{fileCount, plural, one {# file} other {# files}}"
 msgstr "{fileCount, plural, one {# फ़ाइल} other {# फ़ाइलें}}"
 
@@ -947,6 +959,15 @@ msgstr "{scopeLabel} में इनकी एक कॉपी बची रह
 
 msgid "A copy of \"{name}\" was kept in {scopeLabel} on purpose. Don't delete it before comparing it with the original: it may hold the only copy of files the failed move already removed."
 msgstr "“{name}” की एक कॉपी {scopeLabel} में जान-बूझकर रखी गई है। इसे मिटाने से पहले मूल से मिलाकर देखें: इसमें उन फ़ाइलों की इकलौती कॉपी हो सकती है जिन्हें असफल मूव पहले ही हटा चुका है।"
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side."
+msgstr "{fileName} में एक हटाया गया हिस्सा वापस लाया गया, क्योंकि दूसरी ओर उसी पाठ को बदला गया था।"
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side. The earlier versions are in the timeline."
+msgstr "{fileName} में एक हटाया गया हिस्सा वापस लाया गया, क्योंकि दूसरी ओर उसी पाठ को बदला गया था। पिछले संस्करण समयरेखा में हैं।"
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side. The earlier versions were saved to the document's history."
+msgstr "{fileName} में एक हटाया गया हिस्सा वापस लाया गया, क्योंकि दूसरी ओर उसी पाठ को बदला गया था। पिछले संस्करण दस्तावेज़ के इतिहास में सहेजे गए हैं।"
 
 msgid "A DIFFERENT skill named like this one lives at {0} — that folder is not this skill. Rename or delete one of the two to resolve."
 msgstr "इस जैसे नाम वाली एक अलग स्किल {0} पर रहती है — वह फ़ोल्डर यह स्किल नहीं है। सुलझाने के लिए दोनों में से एक का नाम बदलें या हटाएँ।"
@@ -1341,9 +1362,6 @@ msgstr "एजेंट मोड"
 msgid "Agent panel"
 msgstr "एजेंट पैनल"
 
-msgid "Agent panel closed to keep Terminal readable."
-msgstr "Terminal को पढ़ने योग्य बनाए रखने के लिए एजेंट पैनल बंद कर दिया गया।"
-
 msgid "Agent settings"
 msgstr "एजेंट सेटिंग"
 
@@ -1446,6 +1464,21 @@ msgstr "इस एजेंट के साथ पहले से ही ए�
 
 msgid "Always included"
 msgstr "हमेशा शामिल"
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version is in the timeline."
+msgstr "{fileName} में बाहर से किया गया बदलाव मर्ज नहीं किया जा सका, इसलिए यह संस्करण बना रहा। बाहरी संस्करण समयरेखा में है।"
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version was saved to {backupPath}."
+msgstr "{fileName} में बाहर से किया गया बदलाव मर्ज नहीं किया जा सका, इसलिए यह संस्करण बना रहा। बाहरी संस्करण {backupPath} में सहेजा गया है।"
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version was saved to the document's history."
+msgstr "{fileName} में बाहर से किया गया बदलाव मर्ज नहीं किया जा सका, इसलिए यह संस्करण बना रहा। बाहरी संस्करण दस्तावेज़ के इतिहास में सहेजा गया है।"
+
+msgid "An outside change to {fileName} was not valid settings, so your settings stayed. A copy of the outside version was kept in this project's history, which the app cannot show yet."
+msgstr "{fileName} में बाहर से किया गया बदलाव मान्य सेटिंग्स नहीं था, इसलिए आपकी सेटिंग्स बनी रहीं। बाहरी संस्करण की एक प्रति इस प्रोजेक्ट के इतिहास में रखी गई है, जिसे ऐप अभी नहीं दिखा सकता।"
+
+msgid "An outside change to {fileName} was not valid settings, so your settings stayed. A copy of the outside version was saved to {backupPath}."
+msgstr "{fileName} में बाहर से किया गया बदलाव मान्य सेटिंग्स नहीं था, इसलिए आपकी सेटिंग्स बनी रहीं। बाहरी संस्करण की एक प्रति {backupPath} में सहेजी गई है।"
 
 msgid "An unexpected error occurred."
 msgstr "एक अप्रत्याशित त्रुटि हुई।"
@@ -1782,6 +1815,9 @@ msgstr "जब कोई इस टेम्पलेट से दस्ता�
 msgid "Before"
 msgstr "पहले"
 
+msgid "Before an outside change was merged"
+msgstr "बाहरी बदलाव मर्ज होने से पहले"
+
 msgid "Before syncing, set your identity for git commits:"
 msgstr "सिंक करने से पहले, git कमिट के लिए अपनी पहचान सेट करें:"
 
@@ -1845,6 +1881,9 @@ msgstr "दोनों एजेंट अंत में {keep} की हर
 
 msgid "Both versions are identical. Choosing Accept current leaves OpenKnowledge's protection on, so another save of the older version is refused again. Choosing Accept incoming turns that protection off."
 msgstr "दोनों संस्करण एक जैसे हैं। वर्तमान स्वीकारें चुनने पर OpenKnowledge की सुरक्षा चालू रहती है, इसलिए पुराने संस्करण का एक और सेव फिर से अस्वीकार कर दिया जाएगा। आने वाला स्वीकारें चुनने पर वह सुरक्षा बंद हो जाती है।"
+
+msgid "Both versions were kept in {fileName}. It changed outside OpenKnowledge in the same place as here, so the outside version is directly under this one."
+msgstr "{fileName} में दोनों संस्करण रखे गए। यह फ़ाइल OpenKnowledge के बाहर उसी जगह बदली गई जहाँ यहाँ बदलाव हुआ था, इसलिए बाहरी संस्करण ठीक इसके नीचे है।"
 
 msgid "Branch"
 msgstr "ब्रांच"
@@ -2029,6 +2068,9 @@ msgstr "अक्षर"
 
 msgid "Chat history"
 msgstr "चैट का इतिहास"
+
+msgid "Chat history could not be loaded. Try opening the chat again from Chat history."
+msgstr "चैट का इतिहास लोड नहीं हो सका। “चैट का इतिहास” से चैट फिर से खोलने की कोशिश करें।"
 
 msgid "Chat name"
 msgstr "चैट का नाम"
@@ -3982,6 +4024,12 @@ msgstr "संपादन तुरंत लागू होते हैं�
 msgid "Edits at the source land here — no copy-paste drift."
 msgstr "स्रोत पर किए गए संपादन यहाँ आते हैं — कॉपी-पेस्ट का कोई बिखराव नहीं।"
 
+msgid "Edits to {fileName} kept from the last time this branch was open could not be merged, so the file's version stayed. Those edits are in the timeline."
+msgstr "पिछली बार यह ब्रांच खुली होने पर {fileName} में रखे गए संपादन मर्ज नहीं किए जा सके, इसलिए फ़ाइल का संस्करण बना रहा। वे संपादन समयरेखा में हैं।"
+
+msgid "Edits to {fileName} kept from the last time this branch was open could not be merged, so the file's version stayed. Those edits were saved to the document's history."
+msgstr "पिछली बार यह ब्रांच खुली होने पर {fileName} में रखे गए संपादन मर्ज नहीं किए जा सके, इसलिए फ़ाइल का संस्करण बना रहा। वे संपादन दस्तावेज़ के इतिहास में सहेजे गए हैं।"
+
 msgid "Element fields"
 msgstr "तत्व फ़ील्ड"
 
@@ -4589,6 +4637,9 @@ msgstr "फ़ाइल {identity}। संदर्भ पर जाएँ।"
 
 msgid "File already exists"
 msgstr "फ़ाइल पहले से मौजूद है"
+
+msgid "File change notice"
+msgstr "फ़ाइल बदलाव की सूचना"
 
 msgid "File drop zone"
 msgstr "फ़ाइल छोड़ने का क्षेत्र"
@@ -6302,14 +6353,44 @@ msgstr "{0} स्किलें प्रोजेक्ट में ले �
 msgid "Move across"
 msgstr "स्थानांतरित होंगी"
 
+msgid "Move Agents to the bottom edge of the window"
+msgstr "एजेंट को विंडो के निचले किनारे पर ले जाएँ"
+
+msgid "Move Agents to the left edge of the window"
+msgstr "एजेंट को विंडो के बाएँ किनारे पर ले जाएँ"
+
+msgid "Move Agents to the right edge of the window"
+msgstr "एजेंट को विंडो के दाएँ किनारे पर ले जाएँ"
+
+msgid "Move Agents to the top edge of the window"
+msgstr "एजेंट को विंडो के ऊपरी किनारे पर ले जाएँ"
+
 msgid "Move between table cells"
 msgstr "तालिका की कोशिकाओं के बीच जाएँ"
 
 msgid "Move block"
 msgstr "ब्लॉक हिलाएँ"
 
+msgid "Move chat history to the left"
+msgstr "चैट का इतिहास बाईं ओर ले जाएँ"
+
+msgid "Move chat history to the right"
+msgstr "चैट का इतिहास दाईं ओर ले जाएँ"
+
 msgid "Move down"
 msgstr "नीचे ले जाएँ"
+
+msgid "Move Editor to the bottom edge of the window"
+msgstr "संपादक को विंडो के निचले किनारे पर ले जाएँ"
+
+msgid "Move Editor to the left edge of the window"
+msgstr "संपादक को विंडो के बाएँ किनारे पर ले जाएँ"
+
+msgid "Move Editor to the right edge of the window"
+msgstr "संपादक को विंडो के दाएँ किनारे पर ले जाएँ"
+
+msgid "Move Editor to the top edge of the window"
+msgstr "संपादक को विंडो के ऊपरी किनारे पर ले जाएँ"
 
 msgid "Move OpenKnowledge.app to the Trash"
 msgstr "OpenKnowledge.app को ट्रैश में ले जाएँ"
@@ -6325,6 +6406,18 @@ msgstr "Terminal को नीचे ले जाएँ"
 
 msgid "Move Terminal to right"
 msgstr "Terminal को दाईं ओर ले जाएँ"
+
+msgid "Move Terminal to the bottom edge of the window"
+msgstr "Terminal को विंडो के निचले किनारे पर ले जाएँ"
+
+msgid "Move Terminal to the left edge of the window"
+msgstr "Terminal को विंडो के बाएँ किनारे पर ले जाएँ"
+
+msgid "Move Terminal to the right edge of the window"
+msgstr "Terminal को विंडो के दाएँ किनारे पर ले जाएँ"
+
+msgid "Move Terminal to the top edge of the window"
+msgstr "Terminal को विंडो के ऊपरी किनारे पर ले जाएँ"
 
 msgid "Move the current block up or down. In lists, move the current item or selected items."
 msgstr "मौजूदा ब्लॉक को ऊपर या नीचे ले जाएँ। सूचियों में, मौजूदा आइटम या चुने हुए आइटम ले जाएँ।"
@@ -6965,6 +7058,9 @@ msgstr "इंस्टॉल नहीं है · OpenKnowledge फ़ाइ�
 msgid "Not installed in this project yet."
 msgstr "इस प्रोजेक्ट में अभी इंस्टॉल नहीं है।"
 
+msgid "Not merged"
+msgstr "मर्ज नहीं हुआ"
+
 #. Declines the first-visit skill offer; the row on the page keeps it available
 msgid "Not now"
 msgstr "अभी नहीं"
@@ -7343,6 +7439,9 @@ msgstr "इस लिंक को नए टैब में खोलें �
 msgid "Open this settings dialog."
 msgstr "यह सेटिंग संवाद खोलें।"
 
+msgid "Open timeline"
+msgstr "समयरेखा खोलें"
+
 msgid "Open visual-editor find with replace controls expanded."
 msgstr "दृश्य-संपादक की खोज फैले हुए बदलें-नियंत्रणों के साथ खोलें।"
 
@@ -7649,6 +7748,9 @@ msgstr "किसी भी ब्लॉक के बाहर"
 
 msgid "Outside this repository's OpenKnowledge worktrees folder"
 msgstr "इस रिपॉज़िटरी के OpenKnowledge वर्कट्री फ़ोल्डर के बाहर"
+
+msgid "Outside version"
+msgstr "बाहरी संस्करण"
 
 msgid "Outside what Open Knowledge commits."
 msgstr "Open Knowledge जो कमिट करता है उसके दायरे से बाहर।"
@@ -8715,14 +8817,14 @@ msgstr "दृश्य फ़िल्टर रीसेट करें"
 msgid "Resize {handleKey}"
 msgstr "{handleKey} का आकार बदलें"
 
+msgid "Resize {pane}"
+msgstr "{pane} का आकार बदलें"
+
 msgid "Resize document panel"
 msgstr "दस्तावेज़ पैनल का आकार बदलें"
 
 msgid "Resize skills panel"
 msgstr "स्किल पैनल का आकार बदलें"
-
-msgid "Resize terminal"
-msgstr "टर्मिनल का आकार बदलें"
 
 msgid "Resolve conflict in your terminal"
 msgstr "अपने टर्मिनल में टकराव सुलझाएँ"
@@ -9381,6 +9483,12 @@ msgstr "सेटिंग लोड नहीं हो सकीं"
 msgid "Settings for this project. Some are shared with every collaborator through git; others apply only on this computer."
 msgstr "इस प्रोजेक्ट की सेटिंग्स। कुछ git के ज़रिए हर सहयोगी के साथ साझा होती हैं; बाक़ी केवल इस कंप्यूटर पर लागू होती हैं।"
 
+msgid "Settings in {fileName} changed outside OpenKnowledge and now apply. A copy of the change you were making was kept in this project's history, which the app cannot show yet."
+msgstr "{fileName} की सेटिंग्स OpenKnowledge के बाहर बदली गईं और अब लागू हैं। आप जो बदलाव कर रहे थे, उसकी एक प्रति इस प्रोजेक्ट के इतिहास में रखी गई है, जिसे ऐप अभी नहीं दिखा सकता।"
+
+msgid "Settings in {fileName} changed outside OpenKnowledge and now apply. A copy of the change you were making was saved to {backupPath}."
+msgstr "{fileName} की सेटिंग्स OpenKnowledge के बाहर बदली गईं और अब लागू हैं। आप जो बदलाव कर रहे थे, उसकी एक प्रति {backupPath} में सहेजी गई है।"
+
 msgid "Settings sections"
 msgstr "सेटिंग अनुभाग"
 
@@ -10024,6 +10132,9 @@ msgstr "सुझाव मेन्यू खुला"
 msgid "Summarize everything I changed this week"
 msgstr "इस सप्ताह मैंने जो कुछ बदला उसका सारांश दें"
 
+msgid "Swap file sidebar and document panel"
+msgstr "फ़ाइल साइडबार और दस्तावेज़ पैनल की जगह बदलें"
+
 msgid "Switch and update branch"
 msgstr "ब्रांच बदलें और अपडेट करें"
 
@@ -10246,9 +10357,6 @@ msgstr "टर्मिनल {0}"
 
 msgid "Terminal access isn't enabled for this project."
 msgstr "इस प्रोजेक्ट के लिए टर्मिनल पहुँच सक्षम नहीं है।"
-
-msgid "Terminal closed to make room for the agent panel."
-msgstr "एजेंट पैनल के लिए जगह बनाने हेतु Terminal बंद कर दिया गया।"
 
 msgid "Terminal disabled"
 msgstr "टर्मिनल अक्षम"
@@ -11191,14 +11299,14 @@ msgstr "काटी हुई फ़ॉर्मैटिंग चालू �
 msgid "Toggle Terminal in its current dock."
 msgstr "Terminal को उसके मौजूदा डॉक में दिखाएँ या छिपाएँ।"
 
-msgid "Toggle the left file sidebar."
-msgstr "बाईं फ़ाइल साइडबार चालू या बंद करें।"
+msgid "Toggle the document panel."
+msgstr "दस्तावेज़ पैनल चालू या बंद करें।"
+
+msgid "Toggle the file sidebar."
+msgstr "फ़ाइल साइडबार चालू या बंद करें।"
 
 msgid "Toggle the right agents panel, where agent conversations live."
 msgstr "दायाँ एजेंट पैनल चालू या बंद करें, जहाँ एजेंट की बातचीत रहती है।"
-
-msgid "Toggle the right document panel."
-msgstr "दायाँ दस्तावेज़ पैनल चालू या बंद करें।"
 
 msgid "Toggle thumbnails"
 msgstr "थंबनेल चालू या बंद करें"
@@ -11662,6 +11770,9 @@ msgstr "{keyName} के मान"
 msgctxt "settings search keyword"
 msgid "version"
 msgstr "संस्करण"
+
+msgid "Version in OpenKnowledge"
+msgstr "OpenKnowledge में संस्करण"
 
 msgid "via {viaTags}"
 msgstr "{viaTags} के ज़रिए"

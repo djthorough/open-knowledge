@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import type { Extension } from '@hocuspocus/server';
 import type { MarkdownManager } from '@inkeep/open-knowledge-core';
@@ -41,7 +42,13 @@ import {
   isPersistenceExcludedDoc,
   isSystemDoc,
 } from './cc1-broadcast.ts';
-import { type ConfigPersistenceCtx, loadConfigDoc, storeConfigDoc } from './config-persistence.ts';
+import {
+  type ConfigPersistenceCtx,
+  configDocAbsPath,
+  loadConfigDoc,
+  type StoreConfigDocOutcome,
+  storeConfigDoc,
+} from './config-persistence.ts';
 import type { ConflictAuthority } from './conflict-authority.ts';
 import {
   type FreezingLifecycleStatus,
@@ -65,21 +72,39 @@ import {
 } from './derived-document-index.ts';
 import { resolveDirectoryRoot, resolveNativePath } from './directory-root.ts';
 import { applyDiskContentToDoc, FILE_WATCHER_ORIGIN } from './disk-content-intake.ts';
+import type { FileObservation } from './disk-receipts.ts';
+import { displayPathFor } from './display-path.ts';
 import {
   assertNeverStorePublishOutcome,
+  type DeferredStoreDiscardCause,
   type DeferredStoreOutcome,
   type DeferredStoreSettlement,
   DocumentDurabilityState,
+  type HeldSaveReason,
   OK_DOC_REMOVED,
   OK_PATH_UNRESOLVABLE,
+  OK_STORE_HELD,
   OK_STORE_REFUSED,
+  OK_WRITE_DROPPED,
   type StoreFailure,
   type StoreFailureRemoval,
+  type StoreIntakeMerge,
+  type StorePublishOutcome,
+  type WriteDropCause,
+  writtenThroughOf,
 } from './document-durability-state.ts';
 import { refuseStaleExternalWrite } from './external-change.ts';
 import { contentHash, registerWrite } from './file-watcher.ts';
 import { resolvesIntoPrivateState } from './fs-safety.ts';
-import { tracedMkdir, tracedRenameSync, tracedUnlinkSync, tracedWriteFile } from './fs-traced.ts';
+import {
+  type ObservedFileRead,
+  tracedAppendFileSync,
+  tracedMkdir,
+  tracedReadObservedSync,
+  tracedRenameSync,
+  tracedUnlinkSync,
+  tracedWriteFile,
+} from './fs-traced.ts';
 import { errnoCode } from './http/handler-utils.ts';
 import { getLogger } from './logger.ts';
 import {
@@ -92,27 +117,30 @@ import {
 import {
   loadManagedArtifactDoc,
   type ManagedArtifactCtx,
+  type ManagedArtifactDrop,
   managedArtifactContributorAttribution,
   managedArtifactTimelinePaths,
+  type StoreManagedArtifactOutcome,
   storeManagedArtifactDoc,
+  storeManagedArtifactWroteFile,
 } from './managed-artifact-persistence.ts';
 import { mdManager, schema } from './md-manager.ts';
+import type { MergeHistoryRecorder } from './merge-history.ts';
 import {
   loadMermaidDoc,
   type MermaidPersistenceCtx,
+  type StoreMermaidOutcome,
   storeMermaidDoc,
 } from './mermaid-persistence.ts';
 import {
   incrementDeferredStoreFailures,
   incrementGitAutoSaveFailure,
   incrementGitWriterCommitFailure,
+  incrementHeldSave,
   incrementManagedArtifactReconcileCheckpointCreated,
   incrementManagedArtifactReconcileDeduped,
   incrementPersistenceDeferHold,
   incrementPersistenceDiskWrite,
-  incrementPersistenceDivergenceRealign,
-  incrementPersistenceDivergenceRealignCheckpointCreated,
-  incrementPersistenceDivergenceRealignDeduped,
   incrementPersistenceDuplicationBaselineMissing,
   incrementPersistenceDuplicationBaselineRefusals,
   incrementPersistenceDuplicationReset,
@@ -128,6 +156,10 @@ import {
   incrementPersistenceSkipNonQuiescent,
   incrementPersistenceStoreRemovedDoc,
   incrementPersistenceStoreSuperseded,
+  incrementStoreDiskCompare,
+  incrementStoreDiskCompareReadRetries,
+  incrementStoreRestatRefused,
+  type StorePendingReason,
 } from './metrics.ts';
 import { toPosix } from './path-utils.ts';
 import { classifyDuplication } from './persistence-tripwire.ts';
@@ -137,6 +169,7 @@ import {
   getOrLoadRenameLogIndex,
   pendingRenameLogEntries,
 } from './rename-log.ts';
+import { type SaveHold, visibleHoldCause } from './save-hold.ts';
 import { getConvergedFragmentWitness, OBSERVER_SYNC_ORIGIN } from './server-observers.ts';
 import type { ShadowRef, WriterIdentity } from './shadow-repo.ts';
 import {
@@ -149,9 +182,194 @@ import {
   saveInMemoryCheckpoint,
   shadowGit,
 } from './shadow-repo.ts';
+import {
+  assertNeverDiskCompare,
+  COMPARE_READ_RETRY_DELAYS_MS,
+  compareDiskBeforeReplace,
+  type DiskCompareOutcome,
+  restatFile,
+  StoreRestatFailedError,
+  StoreRestatRefusedError,
+  statObservation,
+} from './store-compare.ts';
 import { getMeter, setActiveSpanAttributes, withSpan } from './telemetry.ts';
 
 const log = getLogger('persistence');
+
+type StoreSettlement = SaveHold | 'resolved' | 'neutral';
+
+function assertNeverStoreOutcome(outcome: never): never {
+  throw new Error(`unhandled store outcome: ${String(outcome)}`);
+}
+
+function configSettlement(outcome: StoreConfigDocOutcome, retry: boolean): StoreSettlement {
+  if (typeof outcome === 'object') return outcome;
+  switch (outcome) {
+    case 'persisted':
+    case 'reconciled':
+    case 'reverted':
+      return 'resolved';
+    case 'no-op':
+      return retry ? 'resolved' : 'neutral';
+    case 'write-failed':
+      return 'neutral';
+    default:
+      return assertNeverStoreOutcome(outcome);
+  }
+}
+
+function managedArtifactSettlement(
+  outcome: StoreManagedArtifactOutcome,
+  retry: boolean,
+): StoreSettlement {
+  if (typeof outcome === 'object') return outcome;
+  switch (outcome) {
+    case 'persisted':
+    case 'merged':
+    case 'both-kept':
+    case 'kept-live':
+    case 'stash-fallback':
+    case 'applied':
+      return 'resolved';
+    case 'no-op':
+    case 'outside-taken-in':
+    case 'dropped-legacy-name':
+    case 'dropped-unresolvable':
+    case 'dropped-container-gone':
+      return retry ? 'resolved' : 'neutral';
+    case 'unchanged':
+    case 'write-failed':
+    case 'dropped-intake-landed':
+      return 'neutral';
+    default:
+      return assertNeverStoreOutcome(outcome);
+  }
+}
+
+function enginelessSettlement(outcome: StoreMermaidOutcome, retry: boolean): StoreSettlement {
+  if (typeof outcome === 'object') return outcome;
+  switch (outcome) {
+    case 'persisted':
+    case 'kept-live':
+      return 'resolved';
+    case 'no-op':
+      return retry ? 'resolved' : 'neutral';
+    case 'write-failed':
+      return 'neutral';
+    default:
+      return assertNeverStoreOutcome(outcome);
+  }
+}
+const compareLog = getLogger('store-compare');
+
+const MAX_STORE_COMPARE_RUNS = 3;
+
+const consumedCompareReadFaults = new Map<string, number>();
+
+function compareReaderFor(documentName: string): (path: string) => ObservedFileRead {
+  const fault =
+    process.env.NODE_ENV === 'test' ? process.env.OK_TEST_COMPARE_READ_FAULT : undefined;
+  if (fault === undefined) return tracedReadObservedSync;
+  const [docName, code, count] = fault.split(':');
+  if (docName !== documentName || code === undefined) return tracedReadObservedSync;
+  return (path) => {
+    const consumed = consumedCompareReadFaults.get(fault) ?? 0;
+    if (consumed >= Number(count ?? '1')) return tracedReadObservedSync(path);
+    consumedCompareReadFaults.set(fault, consumed + 1);
+    const err = new Error(`OK_TEST_COMPARE_READ_FAULT: simulated ${code} reading ${path}`);
+    throw Object.assign(err, { code });
+  };
+}
+
+interface StoreRunControl {
+  agentTriggered: boolean | undefined;
+  rerun: 'base-moved' | 'disk-changed' | null;
+}
+
+type StoreIntakeResult =
+  | { readonly kind: 'taken-in'; readonly merge?: StoreIntakeMerge }
+  | { readonly kind: 'conflict' }
+  | { readonly kind: 'failed'; readonly error: unknown };
+
+type StoreDiskIntake = (
+  docName: string,
+  absPath: string,
+  content: string,
+) => Promise<StoreIntakeResult>;
+
+const STORE_PENDING_DESCRIPTIONS: Readonly<Record<StorePendingReason, string>> = {
+  'pending-unreadable': 'its file could not be read for the compare before the write',
+  'pending-exhausted': 'its file kept changing while it was being saved',
+  'pending-base-moved': 'its acknowledged version kept moving while it was being saved',
+  'pending-no-intake': 'its file changed and this persistence has no intake to merge it',
+  'pending-intake-failed': 'its file changed and merging the outside version into it failed',
+  'pending-intake-failed-no-base':
+    'its file changed and taking the outside version in failed, with no agreed version to merge against',
+  'pending-conflict': 'its file changed and could not be merged, so a conflict was raised',
+};
+
+const OUTSIDE_STORE_HOLDS: Readonly<
+  Record<SaveHold['cause'], { readonly reason: HeldSaveReason; readonly description: string }>
+> = {
+  unreadable: {
+    reason: 'pending-unreadable',
+    description: STORE_PENDING_DESCRIPTIONS['pending-unreadable'],
+  },
+  'keeps-changing': {
+    reason: 'pending-exhausted',
+    description: STORE_PENDING_DESCRIPTIONS['pending-exhausted'],
+  },
+  'edits-changing': {
+    reason: 'pending-exhausted',
+    description: 'its edits kept changing while it was being saved',
+  },
+  'no-history-or-backup': {
+    reason: 'pending-no-history-or-backup',
+    description:
+      'its file changed outside and that version could be saved neither to history nor to the backup folder',
+  },
+  'not-utf8': {
+    reason: 'pending-not-utf8',
+    description: 'its file changed outside to bytes that are not UTF-8 text',
+  },
+};
+
+const OUTSIDE_STORE_DROPS: Readonly<
+  Record<ManagedArtifactDrop, { readonly cause: WriteDropCause; readonly description: string }>
+> = {
+  'dropped-legacy-name': { cause: 'legacy-name', description: 'this name has no file of its own' },
+  'dropped-unresolvable': {
+    cause: 'unresolvable',
+    description: 'its file path could not be resolved',
+  },
+  'dropped-container-gone': {
+    cause: 'container-gone',
+    description: 'its skill folder is gone (deleted or moved)',
+  },
+  'dropped-intake-landed': {
+    cause: 'intake-landed',
+    description: 'an outside change to its file was being taken in when the save ran',
+  },
+};
+
+function assertNeverStoreIntake(intake: never): never {
+  throw new Error(`unhandled store intake result: ${(intake as { kind: string }).kind}`);
+}
+
+class StoreHeldPendingError extends Error {
+  readonly reason: StorePendingReason;
+  readonly code = OK_STORE_HELD;
+  readonly causeCode: string | undefined;
+  readonly noBase: boolean;
+
+  constructor(docName: string, reason: StorePendingReason, noBase: boolean, cause?: unknown) {
+    super(`${docName} was not saved: ${STORE_PENDING_DESCRIPTIONS[reason]}`, { cause });
+    this.name = 'StoreHeldPendingError';
+    this.reason = reason;
+    this.noBase = noBase;
+    this.causeCode = cause === undefined ? undefined : errnoCode(cause);
+  }
+}
 
 export class DocumentOpenSizeLimitError extends Error {
   readonly docName: string;
@@ -240,6 +458,7 @@ const DEFERRED_STORE_ERROR_CLASSES = [
   'parse-fallback',
   'traced-rename',
   'duplication-baseline-unavailable',
+  'store-held-pending',
   'unknown',
 ] as const;
 type DeferredStoreErrorClass = (typeof DEFERRED_STORE_ERROR_CLASSES)[number];
@@ -267,6 +486,7 @@ export function classifyDeferredStoreError(err: unknown): DeferredStoreErrorClas
   if (err instanceof DuplicationBaselineUnavailableError) {
     return 'duplication-baseline-unavailable';
   }
+  if (err instanceof StoreHeldPendingError) return 'store-held-pending';
   const e = err as { code?: unknown; message?: unknown };
   const message = typeof e.message === 'string' ? e.message : '';
   if (message.startsWith('symlink-escape:')) return 'disk-write';
@@ -324,6 +544,8 @@ export interface PersistenceOptions {
   isRecentlyRemoved?: (docName: string) => boolean;
   lifecycleOf?: (document: Y.Doc, docName: string) => LifecycleView | null;
   ephemeral?: boolean;
+  ingestDiskAtStore: StoreDiskIntake | null;
+  mergeHistory: MergeHistoryRecorder | null;
 }
 
 export function captureDocSnapshotForPersistence(document: Y.Doc): {
@@ -380,6 +602,17 @@ function probeDocumentFileOnDisk(path: string): DocumentFileProbe {
 }
 
 function toStoreFailure(err: unknown): StoreFailure {
+  if (err instanceof StoreHeldPendingError) {
+    return {
+      code: OK_STORE_HELD,
+      message: err.message,
+      held: {
+        reason: err.reason,
+        ...(err.causeCode === undefined ? {} : { causeCode: err.causeCode }),
+        ...(err.noBase ? { noBase: true as const } : {}),
+      },
+    };
+  }
   let code: string | undefined;
   try {
     const c = (err as NodeJS.ErrnoException | null)?.code;
@@ -401,6 +634,7 @@ export interface PersistenceHandle {
   extension: Extension;
   readonly durabilityState: DocumentDurabilityState;
   flushDeferredStores: (mode?: 'within-branch' | 'discard-stale') => Promise<void>;
+  discardDeferredStore: (docName: string, cause: DeferredStoreDiscardCause) => void;
   flushPendingGitCommit: () => Promise<void>;
   flushContributors: () => Promise<void>;
   waitForPendingCommits: () => Promise<void>;
@@ -409,9 +643,13 @@ export interface PersistenceHandle {
   forgetObservedFile: (docName: string) => void;
   readonly configPersistenceCtx: ConfigPersistenceCtx;
   readonly managedArtifactCtx: ManagedArtifactCtx;
+  readonly mermaidPersistenceCtx: MermaidPersistenceCtx;
+  retryHeldSave: (document: Y.Doc, documentName: string) => Promise<void>;
+  isHeldSaveDue: (documentName: string) => boolean;
+  hasHeldSave: (documentName: string) => boolean;
 }
 
-export function createPersistenceExtension(options?: PersistenceOptions): PersistenceHandle {
+export function createPersistenceExtension(options: PersistenceOptions): PersistenceHandle {
   const durabilityState = options?.durabilityState ?? new DocumentDurabilityState();
   const contentDir = resolveDirectoryRoot(resolve(options?.contentDir ?? process.cwd()), {
     root: 'content',
@@ -452,6 +690,8 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     homedirOverride: options?.configHomedirOverride,
     onConfigRejected: options?.onConfigRejected,
     ephemeral,
+    agreedDisk: new Map<string, string>(),
+    history: options.mergeHistory,
   };
 
   const managedArtifactLkgCache = new Map<string, string>();
@@ -463,13 +703,23 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     getReconciledBase: (docName) => durabilityState.getReconciledBase(docName),
     beforeReconcileDivergence: (document, docName, liveContent, diskContent) =>
       checkpointBeforeManagedArtifactReconcile(document, docName, liveContent, diskContent),
+    history: options.mergeHistory,
   };
 
   const mermaidLkgCache = new Map<string, string>();
   const mermaidPersistenceCtx: MermaidPersistenceCtx = {
     assertContentPath: options?.assertContentPath,
     contentDir,
+    home: options?.configHomedirOverride ?? homedir(),
     lkgCache: mermaidLkgCache,
+    receipts: {
+      get: (docName) => durabilityState.getReceipt(docName),
+      recordAgreed: (docName, content, observation) =>
+        durabilityState.recordReceiptAgreed(docName, content, observation),
+      recordOwnWrite: (docName, content, observation) =>
+        durabilityState.recordReceiptOwnWrite(docName, content, observation),
+    },
+    history: options.mergeHistory,
   };
 
   const tripwireResetFailedDocs = new Set<string>();
@@ -843,7 +1093,6 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
 
   const PERSISTENCE_PREWRITE_SITE = 'persistence-prewrite';
   const PERSISTENCE_DUPLICATION_SITE = 'persistence-duplication-reset';
-  const PERSISTENCE_REALIGN_SITE = 'persistence-divergence-realign';
   const MANAGED_ARTIFACT_RECONCILE_SITE = 'managed-artifact-reconcile';
 
   const lastFloorCheckpointPayload = new WeakMap<Y.Doc, string>();
@@ -1056,78 +1305,6 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     });
   }
 
-  const lastRealignCheckpointPayload = new WeakMap<Y.Doc, string>();
-
-  function checkpointBeforeDivergenceRealign(
-    document: Y.Doc,
-    documentName: string,
-    liveMarkdown: string,
-    diskContent: string,
-  ): void {
-    incrementPersistenceDivergenceRealign();
-    const ring = options?.getLossRing?.();
-    const shadow = shadowRef?.current;
-    if (!shadow) {
-      void ring?.record({
-        event: LOSS_EVENT_CHECKPOINT_WRITE,
-        docName: documentName,
-        writerId: null,
-        direction: 'b',
-        site: PERSISTENCE_REALIGN_SITE,
-        lostLen: liveMarkdown.length,
-      });
-      return;
-    }
-    if (lastRealignCheckpointPayload.get(document) === liveMarkdown) {
-      incrementPersistenceDivergenceRealignDeduped();
-      return;
-    }
-    lastRealignCheckpointPayload.set(document, liveMarkdown);
-    const branch = getCurrentBranch?.() ?? 'main';
-    queueMicrotask(() => {
-      saveInMemoryCheckpoint(shadow, contentRoot, {
-        kind: 'persistence-divergence-realign',
-        docName: documentName,
-        contents: liveMarkdown,
-        label: `Before divergence realign @ ${new Date().toISOString()}`,
-        branch,
-        metadata: { diskBytes: diskContent.length, discardedBytes: liveMarkdown.length },
-      })
-        .then((sha) => {
-          incrementPersistenceDivergenceRealignCheckpointCreated();
-          void ring?.record({
-            event: LOSS_EVENT_CHECKPOINT_WRITE,
-            docName: documentName,
-            writerId: null,
-            direction: 'b',
-            site: PERSISTENCE_REALIGN_SITE,
-            lostLen: liveMarkdown.length,
-            checkpointSha: sha,
-          });
-          console.warn(
-            JSON.stringify({
-              event: 'persistence-divergence-realign-checkpoint-created',
-              docName: documentName,
-              sha,
-              kind: 'persistence-divergence-realign',
-              timestamp: new Date().toISOString(),
-            }),
-          );
-        })
-        .catch((checkpointErr: unknown) => {
-          if (lastRealignCheckpointPayload.get(document) === liveMarkdown) {
-            lastRealignCheckpointPayload.delete(document);
-          }
-          const e =
-            checkpointErr instanceof Error ? checkpointErr : new Error(String(checkpointErr));
-          log.warn(
-            { documentName, err: e },
-            '[persistence] divergence-realign checkpoint write failed',
-          );
-        });
-    });
-  }
-
   const lastManagedReconcileCheckpointPayload = new WeakMap<Y.Doc, string>();
 
   function checkpointBeforeManagedArtifactReconcile(
@@ -1323,6 +1500,13 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     }
   }
 
+  function holdMeetsFileWithNoAgreedVersion(documentName: string): boolean {
+    return (
+      durabilityState.getReconciledBase(documentName) === undefined &&
+      (docsWithFileObservedOnDisk.has(documentName) || frozenPathOccupied(documentName))
+    );
+  }
+
   function frozenRemovalOf(
     document: Y.Doc,
     documentName: string,
@@ -1330,9 +1514,9 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
   ): StoreFailureRemoval | undefined {
     if (frozenPathOccupied(documentName)) return { kind: 'path-occupied' };
     const newPath = document.getMap('lifecycle').get('newPath');
-    return status === 'renamed' && typeof newPath === 'string' && newPath !== ''
-      ? { kind: 'renamed', renamedTo: newPath }
-      : undefined;
+    if (status !== 'renamed' || typeof newPath !== 'string' || newPath === '') return undefined;
+    const carry = durabilityState.renameCarryOf(documentName);
+    return { kind: 'renamed', renamedTo: newPath, ...(carry ? { carry } : {}) };
   }
 
   function documentHadFileOnDisk(documentName: string, base: string | undefined): boolean {
@@ -1360,15 +1544,58 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     return 'refused';
   }
 
-  async function storeDocumentNow({
-    document,
-    documentName,
-    lastTransactionOrigin,
-  }: {
+  function holdStorePending(
+    documentName: string,
+    reason: StorePendingReason,
+    cause?: unknown,
+    noBase = holdMeetsFileWithNoAgreedVersion(documentName),
+  ): never {
+    const held = new StoreHeldPendingError(documentName, reason, noBase, cause);
+    incrementStoreDiskCompare(reason);
+    compareLog.warn(
+      { documentName, reason, code: held.causeCode, err: cause },
+      `[store-compare] ${held.message}; the save stays pending and the file is untouched`,
+    );
+    durabilityState.markStoreRefused(documentName);
+    persistenceDeferCounts.delete(documentName);
+    throw held;
+  }
+
+  async function storeDocumentNow(store: {
     document: Y.Doc;
     documentName: string;
     lastTransactionOrigin: unknown;
   }): Promise<void> {
+    let agentTriggered: boolean | undefined;
+    for (let run = 1; ; run++) {
+      const control: StoreRunControl = { agentTriggered, rerun: null };
+      await storeDocumentRun(store, control);
+      if (control.rerun === null) return;
+      agentTriggered = control.agentTriggered;
+      if (run >= MAX_STORE_COMPARE_RUNS) {
+        const reason = control.rerun === 'base-moved' ? 'pending-base-moved' : 'pending-exhausted';
+        try {
+          holdStorePending(store.documentName, reason);
+        } catch (held) {
+          durabilityState.recordStoreFailure(store.documentName, toStoreFailure(held));
+          throw held;
+        }
+      }
+    }
+  }
+
+  async function storeDocumentRun(
+    {
+      document,
+      documentName,
+      lastTransactionOrigin,
+    }: {
+      document: Y.Doc;
+      documentName: string;
+      lastTransactionOrigin: unknown;
+    },
+    control: StoreRunControl,
+  ): Promise<void> {
     ensureHistograms();
     const started = Date.now();
     let inFlightFlushValue: string | undefined;
@@ -1384,7 +1611,8 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
             `[persistence] Skipped store for ${documentName}: lifecycle=${lifecycleStatus}`,
           );
           if (isRemovalLifecycleStatus(lifecycleStatus)) {
-            const callerAwaitingFlush = durabilityState.consumeAgentWriteStore(documentName);
+            const callerAwaitingFlush =
+              control.agentTriggered ?? durabilityState.consumeAgentWriteStore(documentName);
             const base = durabilityState.getReconciledBase(documentName);
             const candidate = document.getText('source').toString();
             const baseline = base ?? frozenStoreBaselines.get(documentName);
@@ -1416,6 +1644,7 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
             );
             incrementPersistenceSkipNonQuiescent();
             persistenceDeferCounts.set(documentName, deferCount + 1);
+            if (control.agentTriggered) durabilityState.markAgentWriteStore(documentName);
             return;
           }
           console.warn(
@@ -1429,7 +1658,9 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
           incrementPersistenceForceFlushDuringBurst();
         }
 
-        const agentTriggeredStore = durabilityState.consumeAgentWriteStore(documentName);
+        const agentTriggeredStore =
+          control.agentTriggered ?? durabilityState.consumeAgentWriteStore(documentName);
+        control.agentTriggered = agentTriggeredStore;
 
         const { sv: stateVectorAtRead, json } = captureDocSnapshotForPersistence(document);
         const ytextSnapshot = document.getText('source').toString();
@@ -1779,89 +2010,6 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
           await tracedWriteFile(canonicalPath, '# NATIVE\n\nnative-divergence-injected\n', 'utf-8');
         }
 
-        let diskBeforeWrite: string | null = null;
-        if (agentTriggeredStore && currentBase !== undefined) {
-          try {
-            if (existsSync(canonicalPath)) {
-              diskBeforeWrite = readFileSync(canonicalPath, 'utf-8');
-            }
-          } catch (err) {
-            diskBeforeWrite = null;
-            log.warn(
-              { err, documentName },
-              '[persistence] L3 disk-read failed; divergence check skipped for this store',
-            );
-          }
-          if (
-            diskBeforeWrite !== null &&
-            normalizeBridge(diskBeforeWrite) !== normalizeBridge(currentBase)
-          ) {
-            const diskContent = diskBeforeWrite;
-            if (
-              refuseStaleExternalWrite(
-                durabilityState,
-                document,
-                documentName,
-                diskContent,
-                options?.conflicts,
-                markdown,
-              )
-            ) {
-              durabilityState.recordStaleExternalWriteFreeze(documentName);
-              persistenceDeferCounts.delete(documentName);
-              return;
-            }
-            console.warn(
-              JSON.stringify({
-                event: 'agent-write-content-divergence',
-                'doc.name': documentName,
-                outcome: 'reverted',
-                diskBytes: diskContent.length,
-                baseBytes: currentBase.length,
-                candidateBytes: markdown.length,
-              }),
-            );
-            checkpointBeforeDivergenceRealign(document, documentName, markdown, diskContent);
-            const lossRing = options?.getLossRing?.();
-            const detect: DeriveLossDetectOptions = {
-              baselineFullMd: diskContent,
-              report: (obs) => {
-                try {
-                  const dropped = detectPairedIntakeLoss(obs);
-                  if (dropped.length === 0) return;
-                  void lossRing?.record({
-                    event: LOSS_EVENT_DETECTOR_TRIP,
-                    docName: documentName,
-                    writerId: FILE_SYSTEM_WRITER.id,
-                    direction: 'b',
-                    site: PERSISTENCE_REALIGN_SITE,
-                    lostLen: dropped.reduce((n, s) => n + s.length, 0),
-                    digest: fnv1aDigest(dropped.join('\n')),
-                  });
-                } catch (detectErr) {
-                  log.warn(
-                    { documentName, err: detectErr },
-                    '[persistence] divergence-realign loss detection failed',
-                  );
-                }
-              },
-            };
-            try {
-              document.transact(() => {
-                applyDiskContent(document, diskContent, undefined, undefined, undefined, detect);
-              }, FILE_WATCHER_ORIGIN);
-            } catch (err) {
-              durabilityState.recordStoreFailure(documentName, toStoreFailure(err));
-              persistenceDeferCounts.delete(documentName);
-              throw err;
-            }
-            durabilityState.setReconciledBase(documentName, diskContent);
-            durabilityState.recordStoreDivergence(documentName);
-            persistenceDeferCounts.delete(documentName);
-            return;
-          }
-        }
-
         if (
           documentHadFileOnDisk(documentName, currentBase) &&
           resolveStorePathPresence(
@@ -1876,6 +2024,7 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
         }
 
         const tmpPath = atomicTempPath(canonicalPath);
+        let storedObservation: FileObservation | undefined;
         try {
           if (process.env.NODE_ENV === 'test' && process.env.OK_TEST_STORE_FAULT === documentName) {
             const faultErr = new Error(
@@ -1885,33 +2034,190 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
             throw faultErr;
           }
           await tracedWriteFile(tmpPath, markdown, 'utf-8');
-          if (
-            documentHadFileOnDisk(documentName, currentBase) &&
-            resolveStorePathPresence(
-              documentName,
-              canonicalPath,
-              currentBase,
-              markdown,
-              agentTriggeredStore,
-            ) === 'refused'
-          ) {
+          const discardTemp = (reason: string): void => {
             try {
               tracedUnlinkSync(tmpPath);
             } catch (cleanupErr) {
               if (errnoCode(cleanupErr) !== 'ENOENT') {
                 log.warn(
                   { err: cleanupErr, docName: documentName, path: tmpPath },
-                  '[persistence] could not remove the temp file after refusing the publish',
+                  `[persistence] could not remove the temp file after ${reason}`,
                 );
               }
             }
+          };
+          const readForCompare = compareReaderFor(documentName);
+          let compared: DiskCompareOutcome;
+          for (let attempt = 0; ; attempt++) {
+            if (
+              documentHadFileOnDisk(documentName, currentBase) &&
+              resolveStorePathPresence(
+                documentName,
+                canonicalPath,
+                currentBase,
+                markdown,
+                agentTriggeredStore,
+              ) === 'refused'
+            ) {
+              discardTemp('refusing the publish');
+              return;
+            }
+            compared = compareDiskBeforeReplace(
+              {
+                path: canonicalPath,
+                receiptHash: durabilityState.getReceipt(documentName)?.hash,
+                baseHash: currentBase === undefined ? undefined : contentHash(currentBase),
+                candidateHash: contentHash(markdown),
+              },
+              readForCompare,
+            );
+            const retryDelayMs = COMPARE_READ_RETRY_DELAYS_MS[attempt];
+            if (
+              compared.kind !== 'unreadable' ||
+              !compared.transient ||
+              retryDelayMs === undefined
+            ) {
+              break;
+            }
+            incrementStoreDiskCompareReadRetries();
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          }
+          if (
+            (compared.kind === 'drift' ||
+              (compared.kind === 'match' && !compared.alreadyCandidate)) &&
+            durabilityState.getReconciledBase(documentName) !== currentBase &&
+            durabilityState.getReceipt(documentName)?.via !== 'own-write'
+          ) {
+            discardTemp('the acknowledged base moved during the store');
+            compareLog.debug(
+              { documentName },
+              `[store-compare] ${documentName}: an intake moved the acknowledged version while the store ran; storing again from a fresh snapshot`,
+            );
+            control.rerun = 'base-moved';
             return;
           }
-          const outcome = durabilityState.tryPublishStore(storeAttempt, () => {
-            assertProjectContentScope(canonicalPath, contentDir);
-            options?.assertContentPath?.(canonicalPath);
-            tracedRenameSync(tmpPath, canonicalPath);
-          });
+          let comparedObservation: FileObservation | null;
+          switch (compared.kind) {
+            case 'match':
+              incrementStoreDiskCompare('match');
+              comparedObservation = compared.observation;
+              break;
+            case 'drift':
+              incrementStoreDiskCompare('drift');
+              if (currentBase !== undefined) {
+                durabilityState.setReconciledBase(documentName, currentBase, compared.observation);
+              }
+              comparedObservation = compared.observation;
+              break;
+            case 'absent':
+              incrementStoreDiskCompare('absent');
+              if (documentHadFileOnDisk(documentName, currentBase)) {
+                discardTemp('the file vanished before the publish');
+                control.rerun = 'disk-changed';
+                return;
+              }
+              comparedObservation = null;
+              break;
+            case 'unreadable':
+              discardTemp('an unreadable pre-write compare');
+              return holdStorePending(documentName, 'pending-unreadable', compared.error);
+            case 'changed': {
+              discardTemp('finding an outside change before the publish');
+              if (
+                refuseStaleExternalWrite(
+                  durabilityState,
+                  document,
+                  documentName,
+                  compared.text,
+                  options?.conflicts,
+                  markdown,
+                )
+              ) {
+                incrementStoreDiskCompare('stale-refused');
+                if (agentTriggeredStore) {
+                  durabilityState.recordStaleExternalWriteFreeze(documentName);
+                }
+                persistenceDeferCounts.delete(documentName);
+                return;
+              }
+              incrementStoreDiskCompare('changed');
+              const ingest = options.ingestDiskAtStore;
+              if (ingest === null) return holdStorePending(documentName, 'pending-no-intake');
+              compareLog.info(
+                {
+                  documentName,
+                  diskBytes: Buffer.byteLength(compared.text, 'utf8'),
+                  candidateBytes: Buffer.byteLength(markdown, 'utf8'),
+                },
+                `[store-compare] ${documentName} changed on disk since the last agreed version; merging it before the write`,
+              );
+              const intake = await ingest(documentName, canonicalPath, compared.text);
+              switch (intake.kind) {
+                case 'taken-in':
+                  if (agentTriggeredStore && intake.merge !== undefined) {
+                    durabilityState.recordStoreIntake(
+                      documentName,
+                      intake.merge,
+                      writtenThroughOf(document),
+                    );
+                  }
+                  persistenceDeferCounts.delete(documentName);
+                  control.rerun = 'disk-changed';
+                  return;
+                case 'conflict':
+                  return holdStorePending(documentName, 'pending-conflict');
+                case 'failed':
+                  return holdStorePending(
+                    documentName,
+                    currentBase === undefined
+                      ? 'pending-intake-failed-no-base'
+                      : 'pending-intake-failed',
+                    intake.error,
+                    currentBase === undefined,
+                  );
+                default:
+                  return assertNeverStoreIntake(intake);
+              }
+            }
+            default:
+              return assertNeverDiskCompare(compared);
+          }
+          let outcome: StorePublishOutcome;
+          try {
+            outcome = durabilityState.tryPublishStore(storeAttempt, () => {
+              assertProjectContentScope(canonicalPath, contentDir);
+              options?.assertContentPath?.(canonicalPath);
+              if (
+                process.env.NODE_ENV === 'test' &&
+                process.env.OK_TEST_STORE_RESTAT_RACE === documentName
+              ) {
+                delete process.env.OK_TEST_STORE_RESTAT_RACE;
+                tracedAppendFileSync(canonicalPath, '\nrestat-race-injected\n', 'utf-8');
+              }
+              const restat = restatFile(canonicalPath, comparedObservation);
+              if (restat.kind === 'failed') {
+                throw new StoreRestatFailedError(documentName, restat.error);
+              }
+              if (restat.kind === 'moved') throw new StoreRestatRefusedError(documentName);
+              storedObservation = statObservation(tmpPath);
+              tracedRenameSync(tmpPath, canonicalPath);
+            });
+          } catch (publishErr) {
+            if (publishErr instanceof StoreRestatFailedError) {
+              discardTemp('a failed re-stat');
+              return holdStorePending(documentName, 'pending-unreadable', publishErr.cause);
+            }
+            if (!(publishErr instanceof StoreRestatRefusedError)) throw publishErr;
+            discardTemp('a refused re-stat');
+            incrementStoreRestatRefused();
+            compareLog.warn(
+              { documentName },
+              `[store-compare] ${documentName} changed between the compare and the rename; the write was refused and the store runs again`,
+            );
+            persistenceDeferCounts.delete(documentName);
+            control.rerun = 'disk-changed';
+            return;
+          }
           if (outcome !== 'published') {
             try {
               tracedUnlinkSync(tmpPath);
@@ -1990,8 +2296,9 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
           documentName,
           markdown,
           agentTriggeredStore && currentBase !== undefined && currentBase !== markdown
-            ? (diskBeforeWrite ?? currentBase)
+            ? currentBase
             : undefined,
+          storedObservation,
         );
         docsWithSettledWrite.add(documentName);
         docsWithFileObservedOnDisk.add(documentName);
@@ -2044,8 +2351,25 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
   }
 
   function discardDeferredStores(): void {
-    for (const entry of deferredStores.values()) entry.settlement.settle({ kind: 'discarded' });
+    for (const entry of deferredStores.values()) {
+      entry.settlement.settle({ kind: 'discarded', cause: { kind: 'branch-switch' } });
+    }
     deferredStores.clear();
+  }
+
+  function discardDeferredStore(documentName: string, cause: DeferredStoreDiscardCause): void {
+    deferredStores.get(documentName)?.settlement.settle({ kind: 'discarded', cause });
+    deferredStores.delete(documentName);
+  }
+
+  const isStoreHeld = (documentName: string): boolean =>
+    durabilityState.areStoresHeld(documentName);
+
+  function hasUnheldDeferredStores(): boolean {
+    for (const documentName of deferredStores.keys()) {
+      if (!isStoreHeld(documentName)) return true;
+    }
+    return false;
   }
 
   async function flushDeferredStores(mode: 'within-branch' | 'discard-stale' = 'within-branch') {
@@ -2062,13 +2386,13 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
       let drainMode = mode;
       while (true) {
         if (drainMode === 'discard-stale') discardDeferredStores();
-        const entries = [...deferredStores.entries()];
-        deferredStores.clear();
+        const entries = [...deferredStores.entries()].filter(([name]) => !isStoreHeld(name));
+        for (const [documentName] of entries) deferredStores.delete(documentName);
 
         if (drainMode !== 'discard-stale') {
           for (const [documentName, entry] of entries) {
             if (entry.branch !== durabilityState.getActiveBranch()) {
-              entry.settlement.settle({ kind: 'discarded' });
+              entry.settlement.settle({ kind: 'discarded', cause: { kind: 'branch-switch' } });
               continue;
             }
             let outcome: DeferredStoreOutcome = { kind: 'completed' };
@@ -2130,7 +2454,7 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
 
         const nextMode = pendingDeferredStoreFlushMode;
         pendingDeferredStoreFlushMode = null;
-        if (deferredStores.size === 0 && nextMode === null) break;
+        if (!hasUnheldDeferredStores() && nextMode === null) break;
         drainMode = nextMode ?? 'within-branch';
       }
     })().finally(() => {
@@ -2271,7 +2595,15 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
             );
           }
 
-          if (!staleExternalWrite) durabilityState.setReconciledBase(documentName, raw);
+          if (!staleExternalWrite) {
+            if (durabilityState.checkReceiptAtLoad(documentName, raw) === 'changed') {
+              compareLog.info(
+                { documentName },
+                `[store-compare] ${documentName} changed on disk since its last agreed version; loaded the disk version`,
+              );
+            }
+            durabilityState.setReconciledBase(documentName, raw);
+          }
         },
       ).finally(() => {
         loadDurationHist?.record((Date.now() - started) / 1000);
@@ -2297,65 +2629,15 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
       lastContext: _lastContext,
     }) {
       if (isSystemDoc(documentName)) return;
-      if (isConfigDoc(documentName)) {
-        const outcome = await storeConfigDoc(
-          document,
-          documentName,
-          lastTransactionOrigin,
-          configPersistenceCtx,
-        );
-        if (outcome === 'persisted' || outcome === 'reconciled') {
-          try {
-            onConfigPersisted?.(documentName);
-          } catch (err) {
-            log.warn({ err, documentName }, '[persistence] onConfigPersisted callback failed');
-          }
-        }
-        return;
-      }
-      if (isManagedArtifactDoc(documentName)) {
-        const outcome = await storeManagedArtifactDoc(
-          document,
-          documentName,
-          lastTransactionOrigin,
-          managedArtifactCtx,
-        );
-        if (outcome === 'persisted') {
-          const writer = resolveWriterFromOrigin(lastTransactionOrigin, getPrincipal);
-          if (writer && writer.id !== SERVICE_WRITER.id && !writer.id.startsWith('agent-')) {
-            const attribution = managedArtifactContributorAttribution(documentName);
-            if (attribution) {
-              recordContributor(
-                attribution.docKey,
-                writer.id,
-                writer.name,
-                writer.id,
-                attribution.subject,
-              );
-              scheduleGitCommit();
-            }
-          }
-          try {
-            onManagedSkillPersisted?.(documentName);
-          } catch (err) {
-            log.warn(
-              { err, documentName },
-              '[persistence] onManagedSkillPersisted callback failed',
-            );
-          }
-        }
-        return;
-      }
       if (
-        isMermaidDoc(documentName) ||
-        isExcalidrawDoc(documentName) ||
-        isEditableTextDoc(documentName)
+        isConfigDoc(documentName) ||
+        isManagedArtifactDoc(documentName) ||
+        isEnginelessDoc(documentName)
       ) {
-        options?.assertContentPath?.(safeContentPath(documentName, contentDir));
-        await storeMermaidDoc(document, documentName, lastTransactionOrigin, mermaidPersistenceCtx);
+        await storeOutsideContentPipeline(document, documentName, lastTransactionOrigin);
         return;
       }
-      if (durabilityState.isBatchInProgress()) {
+      if (durabilityState.isBatchInProgress() || isStoreHeld(documentName)) {
         deferStore({ document, documentName, lastTransactionOrigin });
         return;
       }
@@ -2393,11 +2675,195 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     };
   }
 
+  function isEnginelessDoc(documentName: string): boolean {
+    return (
+      isMermaidDoc(documentName) || isExcalidrawDoc(documentName) || isEditableTextDoc(documentName)
+    );
+  }
+
+  const heldSaves = new Map<string, SaveHold>();
+
+  function surfaceHeldSave(documentName: string, hold: SaveHold, causeChanged: boolean): void {
+    const cause = visibleHoldCause(hold);
+    if (cause === null) return;
+    if (!isConfigDoc(documentName)) {
+      options.mergeHistory?.noticeHeld(documentName, cause);
+      return;
+    }
+    if (!causeChanged) return;
+    const file = displayPathFor(
+      configDocAbsPath(documentName, configPersistenceCtx),
+      projectDir,
+      configPersistenceCtx.homedirOverride ?? homedir(),
+    );
+    options.onConfigRejected?.(documentName, { code: 'SAVE_HELD', cause, file });
+  }
+
+  function settleHeldSave(documentName: string, settlement: StoreSettlement): void {
+    if (settlement === 'neutral') return;
+    if (settlement === 'resolved') {
+      durabilityState.clearStoreRefused(documentName);
+      heldSaves.delete(documentName);
+      if (!isConfigDoc(documentName)) options.mergeHistory?.clearHeld(documentName);
+      return;
+    }
+    incrementHeldSave();
+    durabilityState.markStoreRefused(documentName);
+    const previous = heldSaves.get(documentName);
+    heldSaves.set(documentName, settlement);
+    const causeChanged = previous?.cause !== settlement.cause;
+    if (causeChanged && settlement.cause === 'not-utf8') {
+      log.warn(
+        { documentName },
+        '[persistence] the file changed outside to bytes that are not valid UTF-8, so the save is held; it is tried again when the file changes',
+      );
+    }
+    surfaceHeldSave(documentName, settlement, causeChanged);
+  }
+
+  function isHeldSaveDue(documentName: string): boolean {
+    if (!durabilityState.isStoreRefused(documentName)) return false;
+    const hold = heldSaves.get(documentName);
+    if (hold?.cause !== 'not-utf8') return true;
+    return restatFile(hold.path, hold.observation).kind !== 'same';
+  }
+
+  async function storeOutsideContentPipeline(
+    document: Y.Doc,
+    documentName: string,
+    lastTransactionOrigin: unknown,
+  ): Promise<void> {
+    const retry = lastTransactionOrigin === null;
+    if (isConfigDoc(documentName)) {
+      const outcome = await storeConfigDoc(
+        document,
+        documentName,
+        lastTransactionOrigin,
+        configPersistenceCtx,
+      );
+      settleHeldSave(documentName, configSettlement(outcome, retry));
+      if (outcome === 'persisted' || outcome === 'reconciled') {
+        try {
+          onConfigPersisted?.(documentName);
+        } catch (err) {
+          log.warn({ err, documentName }, '[persistence] onConfigPersisted callback failed');
+        }
+      }
+      return;
+    }
+    const agentTriggered = durabilityState.consumeAgentWriteStore(documentName);
+    if (isManagedArtifactDoc(documentName)) {
+      const outcome = await storeManagedArtifactDoc(
+        document,
+        documentName,
+        lastTransactionOrigin,
+        managedArtifactCtx,
+      );
+      if (agentTriggered) recordOutsideStoreForAgentWrite(document, documentName, outcome);
+      settleHeldSave(documentName, managedArtifactSettlement(outcome, retry));
+      if (storeManagedArtifactWroteFile(outcome)) {
+        const writer = resolveWriterFromOrigin(lastTransactionOrigin, getPrincipal);
+        if (writer && writer.id !== SERVICE_WRITER.id && !writer.id.startsWith('agent-')) {
+          const attribution = managedArtifactContributorAttribution(documentName);
+          if (attribution) {
+            recordContributor(
+              attribution.docKey,
+              writer.id,
+              writer.name,
+              writer.id,
+              attribution.subject,
+            );
+            scheduleGitCommit();
+          }
+        }
+        try {
+          onManagedSkillPersisted?.(documentName);
+        } catch (err) {
+          log.warn({ err, documentName }, '[persistence] onManagedSkillPersisted callback failed');
+        }
+      }
+      return;
+    }
+    options?.assertContentPath?.(safeContentPath(documentName, contentDir));
+    const outcome = await storeMermaidDoc(
+      document,
+      documentName,
+      lastTransactionOrigin,
+      mermaidPersistenceCtx,
+    );
+    if (agentTriggered) recordOutsideStoreForAgentWrite(document, documentName, outcome);
+    settleHeldSave(documentName, enginelessSettlement(outcome, retry));
+  }
+
+  function recordOutsideStoreForAgentWrite(
+    document: Y.Doc,
+    documentName: string,
+    outcome: StoreMermaidOutcome | StoreManagedArtifactOutcome,
+  ): void {
+    if (typeof outcome === 'object') {
+      const hold = OUTSIDE_STORE_HOLDS[outcome.cause];
+      durabilityState.recordStoreFailure(documentName, {
+        code: OK_STORE_HELD,
+        message: `${documentName} was not saved: ${hold.description}`,
+        held: { reason: hold.reason },
+      });
+      return;
+    }
+    switch (outcome) {
+      case 'persisted':
+      case 'no-op':
+      case 'unchanged':
+        return;
+      case 'applied':
+      case 'outside-taken-in':
+        durabilityState.recordStoreIntake(documentName, 'clean', writtenThroughOf(document));
+        return;
+      case 'dropped-legacy-name':
+      case 'dropped-unresolvable':
+      case 'dropped-container-gone':
+      case 'dropped-intake-landed': {
+        const drop = OUTSIDE_STORE_DROPS[outcome];
+        durabilityState.recordStoreFailure(documentName, {
+          code: OK_WRITE_DROPPED,
+          message: `${documentName} was not saved: ${drop.description}`,
+          dropped: drop.cause,
+        });
+        return;
+      }
+      case 'merged':
+      case 'both-kept':
+        durabilityState.recordStoreIntake(documentName, outcome, writtenThroughOf(document));
+        return;
+      case 'kept-live':
+      case 'stash-fallback':
+        durabilityState.recordStoreIntake(documentName, 'kept-live', writtenThroughOf(document));
+        return;
+      case 'write-failed':
+        durabilityState.recordStoreFailure(documentName, {
+          message: `${documentName} was not saved: its file could not be written`,
+        });
+        return;
+      default:
+        assertNeverStoreOutcome(outcome);
+    }
+  }
+
+  async function retryHeldSave(document: Y.Doc, documentName: string): Promise<void> {
+    if (
+      !isConfigDoc(documentName) &&
+      !isManagedArtifactDoc(documentName) &&
+      !isEnginelessDoc(documentName)
+    ) {
+      return;
+    }
+    await storeOutsideContentPipeline(document, documentName, null);
+  }
+
   async function forceStore(document: Y.Doc, documentName: string): Promise<void> {
     if (isPersistenceExcludedDoc(documentName)) {
       return;
     }
-    if (durabilityState.isBatchInProgress()) {
+    if (durabilityState.isBatchInProgress() || isStoreHeld(documentName)) {
       deferStore({ document, documentName, lastTransactionOrigin: null });
       return;
     }
@@ -2412,6 +2878,7 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     extension,
     durabilityState,
     flushDeferredStores,
+    discardDeferredStore,
     flushPendingGitCommit,
     flushContributors,
     waitForPendingCommits,
@@ -2420,5 +2887,9 @@ export function createPersistenceExtension(options?: PersistenceOptions): Persis
     forgetObservedFile,
     configPersistenceCtx,
     managedArtifactCtx,
+    mermaidPersistenceCtx,
+    retryHeldSave,
+    isHeldSaveDue,
+    hasHeldSave: (documentName) => heldSaves.has(documentName),
   };
 }

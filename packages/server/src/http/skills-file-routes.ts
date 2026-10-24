@@ -15,6 +15,11 @@ import {
   skillFilePathSegments,
 } from '@inkeep/open-knowledge-core';
 import type { AgentSessionManager } from '../agent-sessions.ts';
+import {
+  type AgentWriteFlushOutcome,
+  answeredWithSuccessOnAppRoutes,
+  outcomeOfSavedWrite,
+} from '../agent-write-outcome.ts';
 import { composeAndWriteRawBody } from '../bridge-intake.ts';
 import type { RemovalLifecycleStatus } from '../conflict-kinds.ts';
 import {
@@ -92,16 +97,9 @@ export interface SkillsFileRouteDeps {
   };
   sessionManager: AgentSessionManager;
   respondStaleExternalWrite: (res: ServerResponse, handler: string, docName: string) => void;
-  flushDiskAndDetectOutcome: (
-    docName: string,
-  ) => Promise<
-    | { kind: 'failure'; failure: StoreFailure }
-    | { kind: 'divergence' }
-    | { kind: 'stale-external-write' }
-    | null
-  >;
+  flushDiskAndDetectOutcome: (docName: string) => Promise<AgentWriteFlushOutcome>;
+  markAgentWriteStore: (docName: string) => void;
   respondPersistenceFailure: (res: ServerResponse, failure: StoreFailure, handler: string) => void;
-  respondDiskDivergence: (res: ServerResponse, handler: string) => void;
   okArtifactKey: (
     kind: 'template' | 'folder-frontmatter' | 'folder' | 'skill',
     folder: string,
@@ -195,9 +193,9 @@ export function createSkillsFileRoutes(deps: SkillsFileRouteDeps): ApiRouteGroup
     extractAgentIdentity,
     sessionManager,
     flushDiskAndDetectOutcome,
+    markAgentWriteStore,
     respondStaleExternalWrite,
     respondPersistenceFailure,
-    respondDiskDivergence,
     attributeOkArtifactWrite,
     okArtifactKey,
     commitOkArtifactWrite,
@@ -413,6 +411,7 @@ export function createSkillsFileRoutes(deps: SkillsFileRouteDeps): ApiRouteGroup
         )
           return;
         const routedThroughContent = isProjectMdReference(body.scope, kind, rel);
+        let fileFlushOutcome: AgentWriteFlushOutcome = null;
         let created: boolean;
 
         if (routedThroughContent) {
@@ -444,13 +443,14 @@ export function createSkillsFileRoutes(deps: SkillsFileRouteDeps): ApiRouteGroup
           session.dc.document.transact(() => {
             composeAndWriteRawBody(session.dc.document, body.content, 'agent');
           }, session.origin);
+          markAgentWriteStore(refDocName);
           const flushOutcome = await flushDiskAndDetectOutcome(refDocName);
-          if (flushOutcome?.kind === 'failure') {
+          fileFlushOutcome = flushOutcome;
+          if (
+            flushOutcome?.kind === 'failure' &&
+            !answeredWithSuccessOnAppRoutes(flushOutcome.failure)
+          ) {
             respondPersistenceFailure(res, flushOutcome.failure, 'skill-file-put');
-            return;
-          }
-          if (flushOutcome?.kind === 'divergence') {
-            respondDiskDivergence(res, 'skill-file-put');
             return;
           }
           if (flushOutcome?.kind === 'stale-external-write') {
@@ -504,7 +504,13 @@ export function createSkillsFileRoutes(deps: SkillsFileRouteDeps): ApiRouteGroup
           res,
           200,
           SkillFilePutSuccessSchema,
-          { path: rel, created, kind, content: routedThroughContent },
+          {
+            ...outcomeOfSavedWrite(undefined, fileFlushOutcome),
+            path: rel,
+            created,
+            kind,
+            content: routedThroughContent,
+          },
           { handler: 'skill-file-put' },
         );
       } catch (e) {

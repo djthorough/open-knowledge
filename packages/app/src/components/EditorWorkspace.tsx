@@ -42,6 +42,7 @@ import {
 import { isNoteWindow } from '@/lib/note-window-mode';
 import { paneVisibilityStore } from '@/lib/pane-visibility-store';
 import { hasSidebarDragType, parseSidebarDragPayload } from '@/lib/sidebar-drag';
+import { useFileSidebarSide } from '@/lib/sidebar-side-store';
 import { useSingleFileMode } from '@/lib/single-file-mode';
 import { cn } from '@/lib/utils';
 import { EditorTabs } from './EditorTabs';
@@ -341,7 +342,6 @@ function WorkspacePane({
       onPointerDownCapture={() => focusPane(pane.id)}
       onFocusCapture={() => focusPane(pane.id)}
     >
-      {}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {renderPane({
           pane,
@@ -386,6 +386,7 @@ export function EditorWorkspace({
   } = useDocumentContext();
   const singleFile = useSingleFileMode();
   const singleDocumentSurface = singleFile || isNoteWindow();
+  const fileSidebarSide = useFileSidebarSide();
   const deletedDocName = useSyncExternalStore(
     subscribeNoteWindowDeleted,
     getNoteWindowDeletedDoc,
@@ -692,9 +693,19 @@ export function EditorWorkspace({
     return paneLabel(data.paneId);
   }
 
+  function holdsFileListToggle(pane: EditorPaneState, index: number): boolean {
+    if (projected) return pane.id === focusedPaneId;
+    return index === (fileSidebarSide === 'start' ? 0 : panes.length - 1);
+  }
+
   function paneLeadingControl(pane: EditorPaneState, index: number): ReactNode {
-    if (projected) return pane.id === focusedPaneId ? <FileListToggle /> : undefined;
-    return index === 0 ? <FileListToggle /> : undefined;
+    if (fileSidebarSide !== 'start' || !holdsFileListToggle(pane, index)) return undefined;
+    return <FileListToggle side="start" />;
+  }
+
+  function paneTrailingControl(pane: EditorPaneState, index: number): ReactNode {
+    if (fileSidebarSide !== 'end' || !holdsFileListToggle(pane, index)) return undefined;
+    return <FileListToggle side="end" />;
   }
 
   const paneGroup = (
@@ -785,6 +796,7 @@ export function EditorWorkspace({
                 paneId={pane.id}
                 onSplitComplete={requestTabFocus}
                 leading={paneLeadingControl(pane, index)}
+                trailing={paneTrailingControl(pane, index)}
               />
             </PaneStripDropTarget>
           </Fragment>

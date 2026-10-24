@@ -1,8 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { currentCliCommandName } from '@inkeep/open-knowledge-core';
+import { currentCliCommandName, type ReconcileMergeOutcome } from '@inkeep/open-knowledge-core';
 import { atomicTempPath } from '@inkeep/open-knowledge-core/server';
+import { type Doc, getState } from 'yjs';
+import { type DiskReceipt, DiskReceiptLog, type FileObservation } from './disk-receipts.ts';
 import {
   tracedMkdirSync,
   tracedRenameSync,
@@ -10,18 +12,91 @@ import {
   tracedWriteFileSync,
 } from './fs-traced.ts';
 import { getLogger } from './logger.ts';
-import { incrementInFlightFlushExpired, incrementStaleExternalWriteRefused } from './metrics.ts';
+import {
+  incrementInFlightFlushExpired,
+  incrementReceiptAtLoad,
+  incrementStaleExternalWriteRefused,
+  type ReceiptAtLoad,
+  type StorePendingReason,
+} from './metrics.ts';
 import { contentHash } from './version-hash.ts';
+
+export interface WrittenThrough {
+  readonly clientId: number;
+  readonly clock: number;
+}
+
+export function writtenThroughOf(document: Doc): WrittenThrough {
+  return { clientId: document.clientID, clock: getState(document.store, document.clientID) };
+}
+
+export function editWasCarried(
+  write: WrittenThrough | undefined,
+  carried: WrittenThrough | null,
+): boolean {
+  return (
+    write !== undefined &&
+    carried !== null &&
+    write.clientId === carried.clientId &&
+    write.clock <= carried.clock
+  );
+}
+
+export type RenameCarryAnswer =
+  | { readonly kind: 'settled'; readonly carried: WrittenThrough | null }
+  | { readonly kind: 'unsettled' }
+  | { readonly kind: 'stopped' };
+
+export type HeldSaveReason =
+  | StorePendingReason
+  | 'pending-unsettled'
+  | 'pending-rename'
+  | 'pending-no-history-or-backup'
+  | 'pending-not-utf8';
+
+export type StoreIntakeMerge = ReconcileMergeOutcome | 'disk-replaced';
+
+const STORE_INTAKE_RECORDS_KEPT = 8;
+
+const STORE_INTAKE_STRENGTH: Readonly<Record<StoreIntakeMerge, number>> = {
+  clean: 0,
+  merged: 1,
+  'kept-live': 2,
+  'both-kept': 3,
+  'disk-replaced': 4,
+};
+
+interface StoreIntakeRecord {
+  readonly merge: StoreIntakeMerge;
+  readonly through: WrittenThrough;
+}
+
+type RenameCarry =
+  | {
+      readonly state: 'pending';
+      ended: boolean;
+      readonly answer: PromiseWithResolvers<RenameCarryAnswer>;
+    }
+  | { readonly state: 'settled'; readonly carried: WrittenThrough | null };
 
 export interface StoreFailure {
   code?: string;
   message: string;
   removal?: StoreFailureRemoval;
+  held?: {
+    readonly reason: HeldSaveReason;
+    readonly causeCode?: string;
+    readonly noBase?: true;
+  };
+  dropped?: WriteDropCause;
 }
 
+export type WriteDropCause = 'legacy-name' | 'unresolvable' | 'container-gone' | 'intake-landed';
+
 export type StoreFailureRemoval =
-  | { kind: 'renamed'; renamedTo: string }
-  | { kind: 'path-occupied' };
+  | { kind: 'renamed'; renamedTo: string; carry?: Promise<RenameCarryAnswer> }
+  | { kind: 'path-occupied' }
+  | { kind: 'deleted-outside' };
 
 export interface StoreAttemptToken {
   readonly docName: string;
@@ -30,10 +105,20 @@ export interface StoreAttemptToken {
 
 export type StorePublishOutcome = 'published' | 'stale' | 'reentrant';
 
+export type DeferredStoreDiscardCause =
+  | { readonly kind: 'branch-switch' }
+  | {
+      readonly kind: 'renamed-outside';
+      readonly to: string;
+      readonly carry?: Promise<RenameCarryAnswer>;
+    }
+  | { readonly kind: 'deleted-outside' }
+  | { readonly kind: 'shutdown' };
+
 export type DeferredStoreOutcome =
   | { readonly kind: 'completed' }
   | { readonly kind: 'failed'; readonly failure: StoreFailure }
-  | { readonly kind: 'discarded' };
+  | { readonly kind: 'discarded'; readonly cause: DeferredStoreDiscardCause };
 
 export type DeferredStoreWait = DeferredStoreOutcome | { readonly kind: 'unsettled' };
 
@@ -52,7 +137,12 @@ export function assertNeverDeferredStoreWait(wait: never): never {
 export const OK_DOC_REMOVED = 'OK_DOC_REMOVED';
 export const OK_PATH_UNRESOLVABLE = 'OK_PATH_UNRESOLVABLE';
 export const OK_STORE_REFUSED = 'OK_STORE_REFUSED';
+export const OK_STORE_HELD = 'OK_STORE_HELD';
 export const OK_STORE_DISCARDED = 'OK_STORE_DISCARDED';
+export const OK_DOC_MOVED = 'OK_DOC_MOVED';
+export const OK_SERVER_STOPPED = 'OK_SERVER_STOPPED';
+export const OK_WRITE_REPLACED = 'OK_WRITE_REPLACED';
+export const OK_WRITE_DROPPED = 'OK_WRITE_DROPPED';
 
 const IN_FLIGHT_FLUSH_TTL_MS = 60_000;
 
@@ -169,6 +259,7 @@ export interface DocumentDurabilityStateOptions {
   onStaleExternalWriteChange?: () => void;
   onStoreRefused?: (docName: string) => void;
   hasResolvedExtension?: (docName: string) => boolean;
+  receipts?: DiskReceiptLog;
 }
 
 export class DocumentDurabilityStateError extends Error {
@@ -280,18 +371,22 @@ export class DocumentDurabilityState {
   private readonly agentWriteStores = new Set<string>();
   private readonly refusedStoreDocNames = new Set<string>();
   private readonly storeFailures = new Map<string, StoreFailure>();
-  private readonly storeDivergences = new Set<string>();
+  private readonly storeIntakes = new Map<string, StoreIntakeRecord[]>();
   private readonly staleExternalWriteFreezes = new Set<string>();
   private readonly persistencePath: string | undefined;
   private readonly fileForDocName: (docName: string) => string;
   private readonly onStaleExternalWriteChange: (() => void) | undefined;
   private readonly onStoreRefused: ((docName: string) => void) | undefined;
   private readonly hasResolvedExtension: ((docName: string) => boolean) | undefined;
+  private readonly receipts: DiskReceiptLog;
   private cachedDocumentsByBranch = new Map<string, Map<string, CachedDurabilityDocument>>();
   private lastPersistedParts = snapshotParts(new Map());
   private nextDisplacedExpiryAt = Number.POSITIVE_INFINITY;
   private activeBranch: string;
   private batchInProgress = false;
+  private readonly batchHolders = new Set<string>();
+  private readonly heldStores = new Set<string>();
+  private readonly renameCarries = new Map<string, RenameCarry>();
   private writeAdmissionHolds = 0;
   private readonly writeAdmissionWaiters = new Set<() => void>();
   private readonly writeWaitDeadline = new AsyncLocalStorage<number>();
@@ -304,16 +399,27 @@ export class DocumentDurabilityState {
     this.onStaleExternalWriteChange = options.onStaleExternalWriteChange;
     this.onStoreRefused = options.onStoreRefused;
     this.hasResolvedExtension = options.hasResolvedExtension;
+    this.receipts = options.receipts ?? new DiskReceiptLog();
     this.reconciledBaseByBranch.set(initialBranch, new Map());
     this.restore();
   }
 
   switchReconciledBaseScope(branch: string): void {
     this.persist();
-    this.activeBranch = branch;
-    if (!this.reconciledBaseByBranch.has(branch)) {
-      this.reconciledBaseByBranch.set(branch, new Map());
+    const carried = new Map(this.reconciledBaseByBranch.get(this.activeBranch) ?? []);
+    const target = this.reconciledBaseByBranch.get(branch);
+    if (target) {
+      const branchScoped = new Set([
+        ...(this.displacedVersionsByBranch.get(branch)?.keys() ?? []),
+        ...(this.staleExternalWritesByBranch.get(branch)?.keys() ?? []),
+      ]);
+      for (const docName of branchScoped) {
+        const own = target.get(docName);
+        if (own !== undefined) carried.set(docName, own);
+      }
     }
+    this.activeBranch = branch;
+    this.reconciledBaseByBranch.set(branch, carried);
   }
 
   getActiveBranch(): string {
@@ -324,7 +430,42 @@ export class DocumentDurabilityState {
     return this.reconciledBaseByBranch.get(this.activeBranch)?.get(docName);
   }
 
-  setReconciledBase(docName: string, content: string): void {
+  getReceipt(docName: string): DiskReceipt | undefined {
+    return this.receipts.get(docName);
+  }
+
+  isRecentOwnWrite(docName: string, hash: string): boolean {
+    return this.receipts.isRecentOwnWrite(docName, hash);
+  }
+
+  checkReceiptAtLoad(docName: string, diskContent: string): ReceiptAtLoad {
+    const receipt = this.receipts.get(docName);
+    const outcome: ReceiptAtLoad =
+      receipt === undefined
+        ? 'missing'
+        : receipt.hash === contentHash(diskContent)
+          ? 'unchanged'
+          : 'changed';
+    incrementReceiptAtLoad(outcome);
+    return outcome;
+  }
+
+  refreshReceiptWithoutBase(docName: string, diskContent: string): void {
+    if (this.getReconciledBase(docName) !== undefined) return;
+    if (this.receipts.get(docName) === undefined) return;
+    this.receipts.recordAgreed(docName, diskContent);
+  }
+
+  recordReceiptAgreed(docName: string, content: string, observation?: FileObservation): void {
+    this.receipts.recordAgreed(docName, content, observation);
+  }
+
+  recordReceiptOwnWrite(docName: string, content: string, observation?: FileObservation): void {
+    this.receipts.recordOwnWrite(docName, content, observation);
+  }
+
+  setReconciledBase(docName: string, content: string, observation?: FileObservation): void {
+    this.receipts.recordAgreed(docName, content, observation);
     let bases = this.reconciledBaseByBranch.get(this.activeBranch);
     if (!bases) {
       bases = new Map();
@@ -339,7 +480,28 @@ export class DocumentDurabilityState {
     this.mutateDocument(docName, () => bases.set(docName, content));
   }
 
-  recordSuccessfulStore(docName: string, content: string, displacedContent?: string): void {
+  restoreReconciledBase(docName: string, previous: string | undefined): void {
+    if (previous !== undefined) {
+      this.setReconciledBase(docName, previous);
+      return;
+    }
+    this.receipts.forget(docName);
+    const bases = this.reconciledBaseByBranch.get(this.activeBranch);
+    if (!bases?.has(docName)) return;
+    if (!this.isPersistedDocument(docName)) {
+      bases.delete(docName);
+      return;
+    }
+    this.mutateDocument(docName, () => bases.delete(docName));
+  }
+
+  recordSuccessfulStore(
+    docName: string,
+    content: string,
+    displacedContent?: string,
+    observation?: FileObservation,
+  ): void {
+    this.receipts.recordOwnWrite(docName, content, observation);
     if (displacedContent === undefined) {
       this.setReconciledBase(docName, content);
       return;
@@ -376,8 +538,10 @@ export class DocumentDurabilityState {
    * reads that same base and returns early without it.
    */
   deleteReconciledBase(docName: string): void {
+    this.receipts.forget(docName);
     this.refusedStoreDocNames.delete(docName);
     this.storeFailures.delete(docName);
+    this.storeIntakes.delete(docName);
     const persist = this.isPersistedDocument(docName);
     if (!persist) {
       this.reconciledBaseByBranch.get(this.activeBranch)?.delete(docName);
@@ -822,6 +986,97 @@ export class DocumentDurabilityState {
     }
   }
 
+  holdStores(docName: string): void {
+    this.heldStores.add(docName);
+  }
+
+  releaseStores(docName: string): void {
+    this.heldStores.delete(docName);
+  }
+
+  areStoresHeld(docName: string): boolean {
+    return this.heldStores.has(docName);
+  }
+
+  beginRenameCarry(docName: string): Promise<RenameCarryAnswer> {
+    const current = this.renameCarries.get(docName);
+    if (current?.state === 'pending') {
+      current.ended = false;
+      return current.answer.promise;
+    }
+    const answer = Promise.withResolvers<RenameCarryAnswer>();
+    this.renameCarries.set(docName, { state: 'pending', ended: false, answer });
+    return answer.promise;
+  }
+
+  renameCarryOf(docName: string): Promise<RenameCarryAnswer> | undefined {
+    const current = this.renameCarries.get(docName);
+    if (current === undefined) return undefined;
+    return current.state === 'pending'
+      ? current.answer.promise
+      : Promise.resolve({ kind: 'settled', carried: current.carried });
+  }
+
+  settleRenameCarry(docName: string, carried: WrittenThrough | null): void {
+    const current = this.renameCarries.get(docName);
+    if (current?.state !== 'pending') return;
+    current.answer.resolve({ kind: 'settled', carried });
+    if (current.ended) this.renameCarries.delete(docName);
+    else this.renameCarries.set(docName, { state: 'settled', carried });
+  }
+
+  abandonRenameCarry(docName: string): void {
+    this.settleRenameCarry(docName, null);
+  }
+
+  endRenameCarry(docName: string): void {
+    const current = this.renameCarries.get(docName);
+    if (current?.state === 'pending') current.ended = true;
+    else this.renameCarries.delete(docName);
+  }
+
+  endAllRenameCarries(): void {
+    for (const current of this.renameCarries.values()) {
+      if (current.state === 'pending') current.answer.resolve({ kind: 'stopped' });
+    }
+    this.renameCarries.clear();
+  }
+
+  async awaitRenameCarry(
+    docName: string,
+    carry: Promise<RenameCarryAnswer> | undefined,
+    timeoutMs = WRITE_WAIT_BUDGET_MS,
+  ): Promise<RenameCarryAnswer> {
+    if (carry === undefined) return { kind: 'settled', carried: null };
+    const bound = this.remainingWriteWait(timeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<'expired'>((resolve) => {
+      timer = setTimeout(() => resolve('expired'), bound);
+    });
+    try {
+      const answer = await Promise.race([carry, expired]);
+      if (answer !== 'expired') return answer;
+      getLogger('document-durability-state').warn(
+        { docName, waitedMs: bound },
+        `[durability] the rename carry of ${docName} did not settle within the write's wait; the wait expired`,
+      );
+      return { kind: 'unsettled' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  holdBatch(owner: string): void {
+    this.batchHolders.add(owner);
+    this.batchInProgress = true;
+  }
+
+  releaseBatch(owner: string): boolean {
+    if (!this.batchHolders.delete(owner) || this.batchHolders.size > 0) return false;
+    this.batchInProgress = false;
+    return true;
+  }
+
   setBatchInProgress(value: boolean): void {
     this.batchInProgress = value;
   }
@@ -900,7 +1155,8 @@ export class DocumentDurabilityState {
     timeoutMs = WRITE_WAIT_BUDGET_MS,
   ): Promise<DeferredStoreWait | undefined> {
     const pending = this.deferredStoreOutcomes.get(docName);
-    if (pending === undefined || !this.isWriteAdmissionHeld()) return undefined;
+    if (pending === undefined) return undefined;
+    if (!this.isWriteAdmissionHeld() && !this.heldStores.has(docName)) return undefined;
     const unsettled = { kind: 'unsettled' } as const;
     const bound = this.remainingWriteWait(timeoutMs);
     if (bound === 0) return unsettled;
@@ -954,12 +1210,30 @@ export class DocumentDurabilityState {
     return failure;
   }
 
-  recordStoreDivergence(docName: string): void {
-    this.storeDivergences.add(docName);
+  recordStoreIntake(docName: string, merge: StoreIntakeMerge, through: WrittenThrough): void {
+    const records = this.storeIntakes.get(docName) ?? [];
+    records.push({ merge, through });
+    if (records.length > STORE_INTAKE_RECORDS_KEPT) {
+      records.splice(0, records.length - STORE_INTAKE_RECORDS_KEPT);
+    }
+    this.storeIntakes.set(docName, records);
   }
 
-  takeStoreDivergence(docName: string): boolean {
-    return this.storeDivergences.delete(docName);
+  readStoreIntake(
+    docName: string,
+    write: WrittenThrough | undefined,
+  ): StoreIntakeMerge | undefined {
+    let strongest: StoreIntakeMerge | undefined;
+    for (const record of this.storeIntakes.get(docName) ?? []) {
+      if (!editWasCarried(write, record.through)) continue;
+      if (
+        strongest === undefined ||
+        STORE_INTAKE_STRENGTH[record.merge] > STORE_INTAKE_STRENGTH[strongest]
+      ) {
+        strongest = record.merge;
+      }
+    }
+    return strongest;
   }
 
   recordStaleExternalWriteFreeze(docName: string): void {

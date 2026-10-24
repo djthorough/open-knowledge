@@ -585,6 +585,18 @@ msgstr "{failed} commentaires sur {0} n'ont pas pu être mis à jour."
 msgid "{failedCount, plural, one {1 file failed to upload} other {{failedCount} files failed to upload}}"
 msgstr "{failedCount, plural, one {L'envoi d'un fichier a échoué} many {L'envoi de {failedCount} fichiers a échoué} other {L'envoi de {failedCount} fichiers a échoué}}"
 
+msgid "{file} was not saved because it changed outside OpenKnowledge to content that is not UTF-8 text, so the file was not written over. Your edits stay here, and saving is tried again when the file changes."
+msgstr "{file} n'a pas été enregistré, car il a été modifié en dehors d'OpenKnowledge avec un contenu qui n'est pas du texte UTF-8, donc le fichier n'a pas été écrasé. Vos modifications restent ici, et l'enregistrement sera retenté quand le fichier changera."
+
+msgid "{file} was not saved because it could not be read to compare it with outside changes, so the file was not written over. Your edits stay here, and saving is tried again."
+msgstr "{file} n'a pas été enregistré, car il n'a pas pu être lu pour le comparer aux modifications externes, donc le fichier n'a pas été écrasé. Vos modifications restent ici, et l'enregistrement sera retenté."
+
+msgid "{file} was not saved because it kept changing outside OpenKnowledge. Your edits stay here, and saving is tried again."
+msgstr "{file} n'a pas été enregistré, car il continuait de changer en dehors d'OpenKnowledge. Vos modifications restent ici, et l'enregistrement sera retenté."
+
+msgid "{file} was not saved. It changed outside OpenKnowledge, and that version could not be kept in history or in the backup folder, so the file was not written over. Your edits stay here, and saving is tried again."
+msgstr "{file} n'a pas été enregistré. Il a été modifié en dehors d'OpenKnowledge, et cette version n'a pu être conservée ni dans l'historique ni dans le dossier de sauvegarde, donc le fichier n'a pas été écrasé. Vos modifications restent ici, et l'enregistrement sera retenté."
+
 msgid "{fileCount, plural, one {# file} other {# files}}"
 msgstr "{fileCount, plural, one {# fichier} many {# fichiers} other {# fichiers}}"
 
@@ -951,6 +963,15 @@ msgstr "Une copie peut subsister dans {scopeLabel} pour : {names}. Ne supprimez 
 
 msgid "A copy of \"{name}\" was kept in {scopeLabel} on purpose. Don't delete it before comparing it with the original: it may hold the only copy of files the failed move already removed."
 msgstr "Une copie de « {name} » a été conservée dans {scopeLabel} de façon délibérée. Ne la supprimez pas avant de l'avoir comparée à l'original : elle peut contenir la seule copie des fichiers que le déplacement échoué a déjà supprimés."
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side."
+msgstr "Une suppression dans {fileName} a été annulée, car le même texte a été modifié de l'autre côté."
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side. The earlier versions are in the timeline."
+msgstr "Une suppression dans {fileName} a été annulée, car le même texte a été modifié de l'autre côté. Les versions précédentes se trouvent dans la chronologie."
+
+msgid "A deletion in {fileName} was undone because the same text was changed on the other side. The earlier versions were saved to the document's history."
+msgstr "Une suppression dans {fileName} a été annulée, car le même texte a été modifié de l'autre côté. Les versions précédentes ont été enregistrées dans l'historique du document."
 
 msgid "A DIFFERENT skill named like this one lives at {0} — that folder is not this skill. Rename or delete one of the two to resolve."
 msgstr "Une compétence DIFFÉRENTE portant un nom semblable se trouve dans {0} — ce dossier n'est pas cette compétence. Renommez ou supprimez l'une des deux pour résoudre le problème."
@@ -1345,9 +1366,6 @@ msgstr "Mode agent"
 msgid "Agent panel"
 msgstr "Panneau des agents"
 
-msgid "Agent panel closed to keep Terminal readable."
-msgstr "Le panneau des agents a été fermé pour que Terminal reste lisible."
-
 msgid "Agent settings"
 msgstr "Paramètres de l'agent"
 
@@ -1450,6 +1468,21 @@ msgstr "Un chat avec cet agent est déjà en cours de démarrage — réessayez 
 
 msgid "Always included"
 msgstr "Toujours inclus"
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version is in the timeline."
+msgstr "Une modification externe de {fileName} n'a pas pu être fusionnée, donc cette version a été conservée. La version externe se trouve dans la chronologie."
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version was saved to {backupPath}."
+msgstr "Une modification externe de {fileName} n'a pas pu être fusionnée, donc cette version a été conservée. La version externe a été enregistrée dans {backupPath}."
+
+msgid "An outside change to {fileName} could not be merged, so this version stayed. The outside version was saved to the document's history."
+msgstr "Une modification externe de {fileName} n'a pas pu être fusionnée, donc cette version a été conservée. La version externe a été enregistrée dans l'historique du document."
+
+msgid "An outside change to {fileName} was not valid settings, so your settings stayed. A copy of the outside version was kept in this project's history, which the app cannot show yet."
+msgstr "Une modification externe de {fileName} ne contenait pas de paramètres valides, donc vos paramètres ont été conservés. Une copie de la version externe a été conservée dans l'historique de ce projet, que l'application ne peut pas encore afficher."
+
+msgid "An outside change to {fileName} was not valid settings, so your settings stayed. A copy of the outside version was saved to {backupPath}."
+msgstr "Une modification externe de {fileName} ne contenait pas de paramètres valides, donc vos paramètres ont été conservés. Une copie de la version externe a été enregistrée dans {backupPath}."
 
 msgid "An unexpected error occurred."
 msgstr "Une erreur inattendue s'est produite."
@@ -1786,6 +1819,9 @@ msgstr "Devient le contenu du document lorsque quelqu'un en crée un à partir d
 msgid "Before"
 msgstr "Avant"
 
+msgid "Before an outside change was merged"
+msgstr "Avant la fusion d'une modification externe"
+
 msgid "Before syncing, set your identity for git commits:"
 msgstr "Avant de synchroniser, définissez votre identité pour les commits git :"
 
@@ -1849,6 +1885,9 @@ msgstr "Les deux agents liront tout ce qui se trouve dans {keep}."
 
 msgid "Both versions are identical. Choosing Accept current leaves OpenKnowledge's protection on, so another save of the older version is refused again. Choosing Accept incoming turns that protection off."
 msgstr "Les deux versions sont identiques. Choisir Accepter l’actuel laisse la protection d’OpenKnowledge activée : un nouvel enregistrement de la version antérieure sera de nouveau refusé. Choisir Accepter l’entrant désactive cette protection."
+
+msgid "Both versions were kept in {fileName}. It changed outside OpenKnowledge in the same place as here, so the outside version is directly under this one."
+msgstr "Les deux versions ont été conservées dans {fileName}. Le fichier a été modifié en dehors d'OpenKnowledge au même endroit qu'ici, donc la version externe se trouve juste en dessous de celle-ci."
 
 msgid "Branch"
 msgstr "Branche"
@@ -2033,6 +2072,9 @@ msgstr "caractères"
 
 msgid "Chat history"
 msgstr "Historique des discussions"
+
+msgid "Chat history could not be loaded. Try opening the chat again from Chat history."
+msgstr "Impossible de charger l’historique de la discussion. Essayez de rouvrir la discussion depuis Historique des discussions."
 
 msgid "Chat name"
 msgstr "Nom du chat"
@@ -3986,6 +4028,12 @@ msgstr "Les modifications s’appliquent immédiatement. Le thème détermine le
 msgid "Edits at the source land here — no copy-paste drift."
 msgstr "Les modifications faites à la source arrivent ici — aucune dérive due au copier-coller."
 
+msgid "Edits to {fileName} kept from the last time this branch was open could not be merged, so the file's version stayed. Those edits are in the timeline."
+msgstr "Les modifications de {fileName} conservées depuis la dernière ouverture de cette branche n'ont pas pu être fusionnées, donc la version du fichier a été conservée. Ces modifications se trouvent dans la chronologie."
+
+msgid "Edits to {fileName} kept from the last time this branch was open could not be merged, so the file's version stayed. Those edits were saved to the document's history."
+msgstr "Les modifications de {fileName} conservées depuis la dernière ouverture de cette branche n'ont pas pu être fusionnées, donc la version du fichier a été conservée. Ces modifications ont été enregistrées dans l'historique du document."
+
 msgid "Element fields"
 msgstr "Champs d'élément"
 
@@ -4593,6 +4641,9 @@ msgstr "Fichier {identity}. Accéder à la référence."
 
 msgid "File already exists"
 msgstr "Le fichier existe déjà"
+
+msgid "File change notice"
+msgstr "Avis de modification du fichier"
 
 msgid "File drop zone"
 msgstr "Zone de dépôt de fichiers"
@@ -6306,14 +6357,44 @@ msgstr "Déplacer {0} vers Projet"
 msgid "Move across"
 msgstr "Déplacées"
 
+msgid "Move Agents to the bottom edge of the window"
+msgstr "Déplacer les agents vers le bord inférieur de la fenêtre"
+
+msgid "Move Agents to the left edge of the window"
+msgstr "Déplacer les agents vers le bord gauche de la fenêtre"
+
+msgid "Move Agents to the right edge of the window"
+msgstr "Déplacer les agents vers le bord droit de la fenêtre"
+
+msgid "Move Agents to the top edge of the window"
+msgstr "Déplacer les agents vers le bord supérieur de la fenêtre"
+
 msgid "Move between table cells"
 msgstr "Se déplacer entre les cellules du tableau"
 
 msgid "Move block"
 msgstr "Déplacer le bloc"
 
+msgid "Move chat history to the left"
+msgstr "Déplacer l'historique des discussions à gauche"
+
+msgid "Move chat history to the right"
+msgstr "Déplacer l'historique des discussions à droite"
+
 msgid "Move down"
 msgstr "Descendre"
+
+msgid "Move Editor to the bottom edge of the window"
+msgstr "Déplacer l’éditeur vers le bord inférieur de la fenêtre"
+
+msgid "Move Editor to the left edge of the window"
+msgstr "Déplacer l’éditeur vers le bord gauche de la fenêtre"
+
+msgid "Move Editor to the right edge of the window"
+msgstr "Déplacer l’éditeur vers le bord droit de la fenêtre"
+
+msgid "Move Editor to the top edge of the window"
+msgstr "Déplacer l’éditeur vers le bord supérieur de la fenêtre"
 
 msgid "Move OpenKnowledge.app to the Trash"
 msgstr "Placez OpenKnowledge.app dans la Corbeille"
@@ -6329,6 +6410,18 @@ msgstr "Déplacer Terminal en bas"
 
 msgid "Move Terminal to right"
 msgstr "Déplacer Terminal à droite"
+
+msgid "Move Terminal to the bottom edge of the window"
+msgstr "Déplacer Terminal vers le bord inférieur de la fenêtre"
+
+msgid "Move Terminal to the left edge of the window"
+msgstr "Déplacer Terminal vers le bord gauche de la fenêtre"
+
+msgid "Move Terminal to the right edge of the window"
+msgstr "Déplacer Terminal vers le bord droit de la fenêtre"
+
+msgid "Move Terminal to the top edge of the window"
+msgstr "Déplacer Terminal vers le bord supérieur de la fenêtre"
 
 msgid "Move the current block up or down. In lists, move the current item or selected items."
 msgstr "Déplace le bloc courant vers le haut ou vers le bas. Dans les listes, déplace l’élément courant ou les éléments sélectionnés."
@@ -6969,6 +7062,9 @@ msgstr "Non installé · Fichiers OpenKnowledge présents"
 msgid "Not installed in this project yet."
 msgstr "Pas encore installée dans ce projet."
 
+msgid "Not merged"
+msgstr "Non fusionné"
+
 #. Declines the first-visit skill offer; the row on the page keeps it available
 msgid "Not now"
 msgstr "Pas maintenant"
@@ -7347,6 +7443,9 @@ msgstr "Ouvre ce lien dans un nouvel onglet et réduit le graphe."
 msgid "Open this settings dialog."
 msgstr "Ouvre cette boîte de dialogue des paramètres."
 
+msgid "Open timeline"
+msgstr "Ouvrir la chronologie"
+
 msgid "Open visual-editor find with replace controls expanded."
 msgstr "Ouvre la recherche de l'éditeur visuel avec les contrôles de remplacement dépliés."
 
@@ -7653,6 +7752,9 @@ msgstr "En dehors de tout bloc"
 
 msgid "Outside this repository's OpenKnowledge worktrees folder"
 msgstr "Hors du dossier des arbres de travail OpenKnowledge de ce dépôt"
+
+msgid "Outside version"
+msgstr "Version externe"
 
 msgid "Outside what Open Knowledge commits."
 msgstr "En dehors de ce que valide Open Knowledge."
@@ -8719,14 +8821,14 @@ msgstr "Réinitialiser les filtres d'affichage"
 msgid "Resize {handleKey}"
 msgstr "Redimensionner {handleKey}"
 
+msgid "Resize {pane}"
+msgstr "Redimensionner {pane}"
+
 msgid "Resize document panel"
 msgstr "Redimensionner le panneau du document"
 
 msgid "Resize skills panel"
 msgstr "Redimensionner le panneau Compétences"
-
-msgid "Resize terminal"
-msgstr "Redimensionner le terminal"
 
 msgid "Resolve conflict in your terminal"
 msgstr "Résoudre le conflit dans votre terminal"
@@ -9385,6 +9487,12 @@ msgstr "Échec du chargement des paramètres"
 msgid "Settings for this project. Some are shared with every collaborator through git; others apply only on this computer."
 msgstr "Paramètres de ce projet. Certains sont partagés avec chaque collaborateur via git ; d'autres ne s'appliquent que sur cet ordinateur."
 
+msgid "Settings in {fileName} changed outside OpenKnowledge and now apply. A copy of the change you were making was kept in this project's history, which the app cannot show yet."
+msgstr "Les paramètres de {fileName} ont été modifiés en dehors d'OpenKnowledge et s'appliquent désormais. Une copie de la modification que vous étiez en train de faire a été conservée dans l'historique de ce projet, que l'application ne peut pas encore afficher."
+
+msgid "Settings in {fileName} changed outside OpenKnowledge and now apply. A copy of the change you were making was saved to {backupPath}."
+msgstr "Les paramètres de {fileName} ont été modifiés en dehors d'OpenKnowledge et s'appliquent désormais. Une copie de la modification que vous étiez en train de faire a été enregistrée dans {backupPath}."
+
 msgid "Settings sections"
 msgstr "Sections des paramètres"
 
@@ -10028,6 +10136,9 @@ msgstr "Menu de suggestions ouvert"
 msgid "Summarize everything I changed this week"
 msgstr "Résume tout ce que j'ai changé cette semaine"
 
+msgid "Swap file sidebar and document panel"
+msgstr "Intervertir la barre latérale des fichiers et le panneau du document"
+
 msgid "Switch and update branch"
 msgstr "Changer de branche et mettre à jour"
 
@@ -10250,9 +10361,6 @@ msgstr "Terminal {0}"
 
 msgid "Terminal access isn't enabled for this project."
 msgstr "L'accès au terminal n'est pas activé pour ce projet."
-
-msgid "Terminal closed to make room for the agent panel."
-msgstr "Terminal a été fermé pour faire de la place au panneau des agents."
 
 msgid "Terminal disabled"
 msgstr "Terminal désactivé"
@@ -11195,14 +11303,14 @@ msgstr "Bascule la mise en forme barrée."
 msgid "Toggle Terminal in its current dock."
 msgstr "Affichez ou masquez Terminal dans son panneau actuel."
 
-msgid "Toggle the left file sidebar."
-msgstr "Affiche ou masque la barre latérale des fichiers, à gauche."
+msgid "Toggle the document panel."
+msgstr "Affiche ou masque le panneau du document."
+
+msgid "Toggle the file sidebar."
+msgstr "Affiche ou masque la barre latérale des fichiers."
 
 msgid "Toggle the right agents panel, where agent conversations live."
 msgstr "Affiche ou masque le panneau des agents, à droite, où résident les conversations d'agents."
-
-msgid "Toggle the right document panel."
-msgstr "Affiche ou masque le panneau du document, à droite."
 
 msgid "Toggle thumbnails"
 msgstr "Basculer les miniatures"
@@ -11666,6 +11774,9 @@ msgstr "Valeurs de {keyName}"
 msgctxt "settings search keyword"
 msgid "version"
 msgstr "version"
+
+msgid "Version in OpenKnowledge"
+msgstr "Version dans OpenKnowledge"
 
 msgid "via {viaTags}"
 msgstr "via {viaTags}"

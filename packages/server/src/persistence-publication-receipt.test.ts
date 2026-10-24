@@ -23,6 +23,8 @@ describe('successful publication receipt ownership', () => {
 
   test('ordinary publication remains usable without a receipt consumer', async () => {
     const persistence = createPersistenceExtension({
+      mergeHistory: null,
+      ingestDiskAtStore: null,
       contentDir: fixture.contentDir,
       projectDir: fixture.contentDir,
       gitEnabled: false,
@@ -41,6 +43,8 @@ describe('successful publication receipt ownership', () => {
         throw new Error('Receipt consumer cannot accept the occurrence');
       };
       const options: ReceiptOptions = {
+        mergeHistory: null,
+        ingestDiskAtStore: null,
         contentDir: fixture.contentDir,
         projectDir: fixture.contentDir,
         gitEnabled: false,
@@ -299,7 +303,10 @@ describe('successful publication receipt ownership', () => {
     writeFileSync(fixture.docPath, 'other branch\n');
     durability.setBatchInProgress(false);
     await persistence.flushDeferredStores('discard-stale');
-    await expect(outcome).resolves.toEqual({ kind: 'discarded' });
+    await expect(outcome).resolves.toEqual({
+      kind: 'discarded',
+      cause: { kind: 'branch-switch' },
+    });
     releaseAdmission();
     expect(fixture.disk()).toBe('other branch\n');
     expect(authority.canRetire(discarded)).toBe(true);

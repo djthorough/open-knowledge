@@ -61,7 +61,7 @@ Tools NOT in OK MCP (your host's): `preview_start`, `preview_screenshot`, `WebFe
 - **Native `Read` / `Grep` / `Glob` on in-scope `.md` / `.mdx`** — the original case.
 - **`Bash ls` / `Bash find` / `Bash cat` on dirs containing in-scope markdown** — use `exec("ls -A …")` / `exec("find … -name '*.md'")` / `exec("cat …")`. Native returns bare names; `exec` adds frontmatter, backlinks, and recent activity. `-A` shows hidden entries without `.`/`..`.
 - **Glob patterns that target markdown** — `exec` expands file operands (`cat specs/*.md`); quoted patterns and a command's own pattern (`find -name`) stay literal.
-- **Dispatching the Explore / general-purpose subagent for markdown-heavy exploration** — subagents use native tools internally and bypass OK. Do markdown exploration yourself via `exec` / `search`. Subagents remain appropriate for **source-code** exploration.
+- **Dispatching the Explore / general-purpose subagent for markdown-heavy exploration** — a subagent may start without this skill loaded and then read markdown with its native tools, bypassing OK. Do markdown exploration yourself via `exec` / `search`. Subagents remain appropriate for **source-code** exploration.
 - **Native `Read` / `Grep` on in-scope markdown inside `.ok/`** — `.ok/` is in-scope; treat its `.md` / `.mdx` like any other KB file.
 - **`ls` / `cat` / `find` on skill folders to discover or read a skill** — skills are addressed by `name`+`scope`, not by path (a skill can live in any editor dir, the `.agents/skills/` hub, or a custom root, with copies elsewhere). Use the `skills` tool.
 
@@ -103,9 +103,9 @@ Every `.md` / `.mdx` needs YAML frontmatter — `title` + `description` required
 - **Use a template when one fits (MUST).** Instantiate via `write({ document: { path, template } })`; inherited templates count. Skip only when none match or the user asked for free-form (note why in chat). Create templates proactively when a shape recurs.
 - **When recurring per-doc properties emerge (MUST).** Writing the same frontmatter on multiple siblings → bake those starting values into a template (`write({ template })`). Folder frontmatter does not cascade values into docs.
 
-## Conflict-aware writes
+## Write outcomes
 
-For a conflict refusal, follow the tool's recovery instructions and `references/conflict-resolution.md`; ask the user to resolve tracked conflicts in the app.
+For every write result, read `outcome` and follow `nextStep` (`references/conflict-resolution.md` has each outcome's move): never repeat a write that landed (`merged-first`, `both-kept`, `projection-held`), and when a refusal says `nextStep: none`, nothing you send changes it: tell the user which file and what the result says, and carry on.
 
 ## Anti-patterns — the top offenders
 

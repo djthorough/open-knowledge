@@ -140,6 +140,7 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
   const descriptor = getDescriptor(node.attrs.componentName as string);
   const [renderError, setRenderError] = useState<Error | null>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const panelInteractedOutside = useRef(false);
   const wasSelected = useRef(false);
 
   const pos = typeof getPos === 'function' ? getPos() : undefined;
@@ -605,17 +606,12 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
         onClick={handleBodyClick}
         onKeyDown={handleKeyDown}
       >
-        {}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: stopPropagation required inside PM NodeView */}
-        <div
+        <div // oxlint-disable-line jsx-a11y/no-static-element-interactions -- stopPropagation required inside PM NodeView
           className="jsx-component-chrome"
           contentEditable={false}
           onMouseDown={(e) => e.stopPropagation()}
           {...{ [OPT_OUT_ATTR]: 'true' }}
         >
-          {}
-
-          {}
           {descriptor.name === 'Embed' &&
             typeof primitiveProps.src === 'string' &&
             /^https?:\/\//i.test(primitiveProps.src) && (
@@ -631,7 +627,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
               </a>
             )}
 
-          {}
           {descriptor.name === 'Mirror' &&
             typeof primitiveProps.src === 'string' &&
             primitiveProps.src.length > 0 &&
@@ -655,7 +650,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
               );
             })()}
 
-          {}
           {canMoveUp && (
             <button
               type="button"
@@ -738,7 +732,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
             </button>
           )}
 
-          {}
           {editableSource && typeof pos === 'number' ? (
             <button
               type="button"
@@ -751,7 +744,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
             </button>
           ) : null}
 
-          {}
           {expandableChart !== null ? (
             <button
               type="button"
@@ -764,7 +756,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
             </button>
           ) : null}
 
-          {}
           {boardExpandable ? (
             <button
               type="button"
@@ -777,7 +768,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
             </button>
           ) : null}
 
-          {}
           {!isEmbedded && commentLeafText(node).length > 0 && typeof pos === 'number' ? (
             <button
               type="button"
@@ -820,7 +810,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
             </button>
           ) : null}
 
-          {}
           <button
             type="button"
             className="jsx-chrome-btn jsx-chrome-btn--delete"
@@ -863,7 +852,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
             <Trash2 size={12} aria-hidden="true" />
           </button>
 
-          {}
           {hasEditableProps && (
             <PopoverTrigger asChild>
               <button
@@ -878,8 +866,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
           )}
         </div>
 
-        {}
-        {}
         {showPlaceholder && resolvedPlaceholder ? (
           <PopoverAnchor asChild>
             <DescriptorPlaceholder
@@ -944,7 +930,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
           </ComponentErrorBoundary>
         )}
 
-        {}
         {descriptor.emptyChildName &&
           !(descriptor.name === 'Tabs' && node.childCount > 0) &&
           (() => {
@@ -1031,21 +1016,23 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
           }}
         />
       ) : null}
-      {}
       {hasEditableProps && (
         <PopoverContent
           side={showPlaceholder ? 'bottom' : 'right'}
           align={showPlaceholder ? 'center' : 'start'}
           sideOffset={showPlaceholder ? -4 : 8}
           className="w-64 p-3 z-60 overflow-y-auto subtle-scrollbar max-h-(--radix-popper-available-height) overscroll-contain"
-          onCloseAutoFocus={
-            isSelfClosingLeaf
-              ? (e) => {
-                  e.preventDefault();
-                  editor.view.focus();
-                }
-              : undefined
-          }
+          onInteractOutside={() => {
+            panelInteractedOutside.current = true;
+          }}
+          onCloseAutoFocus={(e) => {
+            const interactedOutside = panelInteractedOutside.current;
+            panelInteractedOutside.current = false;
+            if (!isSelfClosingLeaf && interactedOutside) return;
+            e.preventDefault();
+            const view = getEditorView(editor);
+            if (view && !view.isDestroyed) view.focus();
+          }}
         >
           <div className="text-xs font-medium text-muted-foreground mb-2">
             <Trans>{propPanelDescriptorLabel} Properties</Trans>
@@ -1080,6 +1067,13 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
               } else {
                 nextProps[propName] = value;
               }
+              if (
+                propName === 'src' &&
+                elementAttrs.componentName === 'CommonMarkImage' &&
+                value !== currentNodeProps.src
+              ) {
+                delete nextProps.sourceUrl;
+              }
               editor.view.dispatch(
                 editor.state.tr.setNodeMarkup(p, null, {
                   ...elementAttrs,
@@ -1091,7 +1085,6 @@ export function JsxComponentView({ node, editor, extension, getPos, selected }: 
               markUserTyping();
             }}
           />
-          {}
           <div className="mt-3 flex justify-end border-t border-border pt-2">
             <Button
               type="button"

@@ -2,6 +2,8 @@ import {
   COMMAND_IDENTITIES,
   type CommandContext,
   type CommandIdentity,
+  DOCK_MOVE_COMMANDS,
+  type DockMoveSide,
   evaluateCommandAvailability,
 } from '@inkeep/open-knowledge-core/commands/command-identity';
 import { SHOW_INSTALL_SKILL } from '@inkeep/open-knowledge-core/constants/feature-flags';
@@ -13,6 +15,7 @@ import {
 import type { MessageDescriptor } from '@lingui/core';
 import { msg, t } from '@lingui/core/macro';
 import {
+  ArrowLeftRight,
   Blocks,
   BookOpen,
   Bug,
@@ -34,8 +37,10 @@ import {
   MessageSquare,
   Network,
   Package,
+  PanelBottom,
   PanelLeft,
   PanelRight,
+  PanelTop,
   Pencil,
   Plus,
   RefreshCw,
@@ -56,9 +61,11 @@ import type { ResolvedNavigationTarget } from '@/components/navigation-targets';
 import { PANE_ICON } from '@/components/pane-icons';
 import { requestSkillsDockExpanded } from '@/components/skills-dock-expanded-store';
 import type { OkDesktopBridge, OkMenuAction } from '@/lib/desktop-bridge-types';
+import { requestDockPaneMove } from '@/lib/dock-move-requests';
 import { i18n } from '@/lib/i18n';
 import type { KeyboardShortcutId } from '@/lib/keyboard-shortcuts';
 import { openDocInNoteWindow } from '@/lib/open-note-window';
+import { moveChatHistory, type PhysicalSide, swapEditorSidebars } from '@/lib/sidebar-side-store';
 import { openSettings } from '@/lib/use-settings-route';
 import type { ViewMenuState } from '@/lib/view-menu-state-store';
 
@@ -91,6 +98,7 @@ export interface PaletteCommandContext {
   activeDocName: string | null;
   contextualTargetKind: ContextualTargetKind;
   viewMenuState: ViewMenuState;
+  chatHistorySide: PhysicalSide;
   emitMenuAction(action: OkMenuAction): void;
   runAction(fn: () => Promise<void> | void, fallback?: string): void;
   openExternalUrl(url: string): void;
@@ -156,6 +164,9 @@ const PALETTE_COMMAND_LABELS = {
   sidebarHide: msg`Hide sidebar`,
   docPanelShow: msg`Show document panel`,
   docPanelHide: msg`Hide document panel`,
+  swapEditorSidebars: msg`Swap file sidebar and document panel`,
+  chatHistoryMoveLeft: msg`Move chat history to the left`,
+  chatHistoryMoveRight: msg`Move chat history to the right`,
   editorShow: msg`Show Editor`,
   editorHide: msg`Hide Editor`,
   terminalShow: msg`Show Terminal`,
@@ -165,6 +176,18 @@ const PALETTE_COMMAND_LABELS = {
   agentPanelShow: msg`Show Agents`,
   agentPanelHide: msg`Hide Agents`,
   agentPanelAskSelection: msg`Ask AI About Selection`,
+  editorMoveToLeftEdge: msg`Move Editor to the left edge of the window`,
+  editorMoveToRightEdge: msg`Move Editor to the right edge of the window`,
+  editorMoveToTopEdge: msg`Move Editor to the top edge of the window`,
+  editorMoveToBottomEdge: msg`Move Editor to the bottom edge of the window`,
+  agentsMoveToLeftEdge: msg`Move Agents to the left edge of the window`,
+  agentsMoveToRightEdge: msg`Move Agents to the right edge of the window`,
+  agentsMoveToTopEdge: msg`Move Agents to the top edge of the window`,
+  agentsMoveToBottomEdge: msg`Move Agents to the bottom edge of the window`,
+  terminalMoveToLeftEdge: msg`Move Terminal to the left edge of the window`,
+  terminalMoveToRightEdge: msg`Move Terminal to the right edge of the window`,
+  terminalMoveToTopEdge: msg`Move Terminal to the top edge of the window`,
+  terminalMoveToBottomEdge: msg`Move Terminal to the bottom edge of the window`,
   showHiddenFiles: msg`Show hidden files`,
   showOkFolders: msg`Show .ok folders`,
   showOnlyMarkdownFiles: msg`Show only markdown files`,
@@ -211,7 +234,17 @@ function paletteLabelDescriptor(
   return PALETTE_COMMAND_LABELS[key];
 }
 
+const DOCK_SIDE_ICON = {
+  left: PanelLeft,
+  right: PanelRight,
+  top: PanelTop,
+  bottom: PanelBottom,
+} as const satisfies Record<DockMoveSide, ComponentType<{ className?: string }>>;
+
 const COMMAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+  ...Object.fromEntries(
+    DOCK_MOVE_COMMANDS.map((command) => [command.id, DOCK_SIDE_ICON[command.side]]),
+  ),
   'open-blob-run': Gamepad2,
   'navigate-back': ChevronLeft,
   'navigate-forward': ChevronRight,
@@ -243,6 +276,9 @@ const COMMAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   'switch-worktree': GitBranch,
   'toggle-sidebar': PanelLeft,
   'toggle-doc-panel': PanelRight,
+  'swap-editor-sidebars': ArrowLeftRight,
+  'move-chat-history-left': PanelLeft,
+  'move-chat-history-right': PanelRight,
   'toggle-terminal': PANE_ICON.terminal,
   'move-terminal': SquareTerminal,
   'toggle-agent-panel': PANE_ICON.agents,
@@ -264,6 +300,27 @@ const COMMAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
 };
 
 const COMMAND_DISPATCH: Record<string, (ctx: PaletteCommandContext) => void> = {
+  ...Object.fromEntries(
+    DOCK_MOVE_COMMANDS.map((command) => [
+      command.id,
+      (ctx: PaletteCommandContext) => {
+        ctx.closePalette();
+        requestDockPaneMove({ pane: command.pane, side: command.side });
+      },
+    ]),
+  ),
+  'swap-editor-sidebars': (ctx) => {
+    ctx.closePalette();
+    swapEditorSidebars();
+  },
+  'move-chat-history-left': (ctx) => {
+    ctx.closePalette();
+    moveChatHistory('left');
+  },
+  'move-chat-history-right': (ctx) => {
+    ctx.closePalette();
+    moveChatHistory('right');
+  },
   'open-blob-run': (ctx) => ctx.openBlobRun(),
   'new-file': (ctx) => {
     ctx.closePalette();
@@ -352,6 +409,13 @@ const COMMAND_DISPATCH: Record<string, (ctx: PaletteCommandContext) => void> = {
   'open-discord': (ctx) => ctx.openExternalUrl(OPEN_KNOWLEDGE_DISCORD_URL),
 };
 
+const STATE_AVAILABILITY: Readonly<
+  Partial<Record<string, (ctx: PaletteCommandContext) => boolean>>
+> = {
+  'move-chat-history-left': (ctx) => ctx.chatHistorySide === 'right',
+  'move-chat-history-right': (ctx) => ctx.chatHistorySide === 'left',
+};
+
 function paletteCoreContext(ctx: PaletteCommandContext): CommandContext {
   return {
     host: ctx.bridge !== null ? 'desktop' : 'web',
@@ -415,7 +479,9 @@ function toPaletteCommand(cmd: CommandIdentity): PaletteCommand {
     shortcutId: cmd.shortcutId as KeyboardShortcutId | undefined,
     shortcutDesktopOnly: cmd.shortcutDesktopOnly,
     checked: checkField ? (ctx) => ctx.viewMenuState[checkField] === true : undefined,
-    available: (ctx) => evaluateCommandAvailability(cmd.availability, paletteCoreContext(ctx)),
+    available: (ctx) =>
+      evaluateCommandAvailability(cmd.availability, paletteCoreContext(ctx)) &&
+      (STATE_AVAILABILITY[cmd.id]?.(ctx) ?? true),
     dispatch: COMMAND_DISPATCH[cmd.id] ?? busDispatch(cmd),
   };
 }

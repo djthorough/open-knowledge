@@ -1,4 +1,5 @@
 import type { MenuLabelKey } from '../constants/menu-labels.ts';
+import type { PaneId } from '../terminal-layout.ts';
 
 export type CommandGroup = 'commands' | 'project' | 'file' | 'view' | 'terminal' | 'app';
 
@@ -129,6 +130,75 @@ export interface CommandIdentity {
   readonly availability: CommandAvailabilitySpec;
   readonly palette?: CommandPalettePresence;
   readonly menu?: readonly CommandMenuPlacement[];
+}
+
+export type DockMoveSide = 'left' | 'right' | 'top' | 'bottom';
+
+export interface DockMoveCommand {
+  readonly id: string;
+  readonly pane: PaneId;
+  readonly side: DockMoveSide;
+  readonly labelKey: MenuLabelKey;
+}
+
+const DOCK_MOVE_LABELS = {
+  editor: {
+    left: 'editorMoveToLeftEdge',
+    right: 'editorMoveToRightEdge',
+    top: 'editorMoveToTopEdge',
+    bottom: 'editorMoveToBottomEdge',
+  },
+  agents: {
+    left: 'agentsMoveToLeftEdge',
+    right: 'agentsMoveToRightEdge',
+    top: 'agentsMoveToTopEdge',
+    bottom: 'agentsMoveToBottomEdge',
+  },
+  terminal: {
+    left: 'terminalMoveToLeftEdge',
+    right: 'terminalMoveToRightEdge',
+    top: 'terminalMoveToTopEdge',
+    bottom: 'terminalMoveToBottomEdge',
+  },
+} as const satisfies Record<PaneId, Record<DockMoveSide, MenuLabelKey>>;
+
+const DOCK_MOVE_PANE_ALIASES = {
+  editor: ['document'],
+  agents: ['chat', 'ai'],
+  terminal: ['shell', 'console'],
+} as const satisfies Record<PaneId, readonly string[]>;
+
+const DOCK_MOVE_SIDES: readonly DockMoveSide[] = ['left', 'right', 'top', 'bottom'];
+
+export const DOCK_MOVE_COMMANDS: readonly DockMoveCommand[] = (
+  Object.keys(DOCK_MOVE_LABELS) as PaneId[]
+).flatMap((pane) =>
+  DOCK_MOVE_SIDES.map((side) => ({
+    id: `move-${pane}-${side}`,
+    pane,
+    side,
+    labelKey: DOCK_MOVE_LABELS[pane][side],
+  })),
+);
+
+function dockMoveIdentity(command: DockMoveCommand): CommandIdentity {
+  const terminal = command.pane === 'terminal';
+  return {
+    id: command.id,
+    labelKey: command.labelKey,
+    keywords: [
+      'move',
+      'dock',
+      'pane',
+      'layout',
+      'edge',
+      command.pane,
+      ...DOCK_MOVE_PANE_ALIASES[command.pane],
+      command.side,
+    ],
+    availability: terminal ? { host: 'desktop', requiresTerminalCapability: true } : {},
+    palette: { group: terminal ? 'terminal' : 'view', visibility: 'search-only' },
+  };
 }
 
 export const COMMAND_IDENTITIES: readonly CommandIdentity[] = [
@@ -476,6 +546,59 @@ export const COMMAND_IDENTITIES: readonly CommandIdentity[] = [
     menu: [{ section: 'view-panels', order: 1, accelerator: 'CmdOrCtrl+Alt+B' }],
   },
   {
+    id: 'swap-editor-sidebars',
+    labelKey: 'swapEditorSidebars',
+    keywords: [
+      'sidebar',
+      'file',
+      'files',
+      'document',
+      'panel',
+      'swap',
+      'move',
+      'side',
+      'left',
+      'right',
+      'position',
+    ],
+    availability: { singleFileHidden: true },
+    palette: { group: 'view', visibility: 'search-only' },
+  },
+  {
+    id: 'move-chat-history-left',
+    labelKey: 'chatHistoryMoveLeft',
+    keywords: [
+      'chat',
+      'history',
+      'conversations',
+      'agents',
+      'sidebar',
+      'move',
+      'side',
+      'left',
+      'position',
+    ],
+    availability: {},
+    palette: { group: 'view', visibility: 'search-only' },
+  },
+  {
+    id: 'move-chat-history-right',
+    labelKey: 'chatHistoryMoveRight',
+    keywords: [
+      'chat',
+      'history',
+      'conversations',
+      'agents',
+      'sidebar',
+      'move',
+      'side',
+      'right',
+      'position',
+    ],
+    availability: {},
+    palette: { group: 'view', visibility: 'search-only' },
+  },
+  {
     id: 'toggle-editor',
     menuActionId: 'toggle-editor',
     labelKey: 'editorShow',
@@ -614,7 +737,7 @@ export const COMMAND_IDENTITIES: readonly CommandIdentity[] = [
     id: 'move-terminal',
     menuActionId: 'move-terminal',
     labelKey: 'terminalMoveRight',
-    keywords: ['terminal', 'move', 'dock', 'right', 'bottom', 'placement'],
+    keywords: ['terminal', 'shell', 'console', 'move', 'dock', 'right', 'bottom', 'placement'],
     placementToggle: {
       bottomKey: 'terminalMoveRight',
       rightKey: 'terminalMoveBottom',
@@ -701,4 +824,5 @@ export const COMMAND_IDENTITIES: readonly CommandIdentity[] = [
       },
     ],
   },
+  ...DOCK_MOVE_COMMANDS.map(dockMoveIdentity),
 ];

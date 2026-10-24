@@ -3,6 +3,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -10,6 +11,7 @@ import {
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { statMtime } from '@inkeep/open-knowledge-core/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createContentFilter } from './content-filter.ts';
 import type { DiskEvent } from './file-watcher';
@@ -17,6 +19,7 @@ import {
   classifyEvents,
   contentHash,
   evictStaleTrackerEntries,
+  type FileIndexEntry,
   handleRawEvents,
   isSelfRemoval,
   isSelfWrite,
@@ -551,6 +554,53 @@ describe('classifyEvents', () => {
     }
   });
 
+  test("a new file that reuses a removed file's inode number is not a rename unless its size and time match", async () => {
+    const removed = resolve(contentDir, 'removed.md');
+    const external = resolve(contentDir, 'external.md');
+    updateLastKnownHash(removed, contentHash('# Removed\n'));
+    writeFileSync(external, '# External, a different file\n');
+    const reused = statSync(external, { bigint: true });
+    const indexWith = (size: number, modified: string) =>
+      new Map<string, FileIndexEntry>([
+        [
+          'removed',
+          {
+            kind: 'markdown',
+            canonicalPath: removed,
+            inode: `${reused.dev}:${reused.ino}`,
+            size,
+            modified,
+            aliases: [],
+          },
+        ],
+      ]);
+    const classify = async (index: Map<string, FileIndexEntry>) => {
+      const collected: DiskEvent[] = [];
+      await handleRawEvents(
+        [
+          { type: 'delete', path: removed },
+          { type: 'create', path: external },
+        ],
+        contentDir,
+        undefined,
+        index,
+        new Map(),
+        async (event) => {
+          collected.push(event);
+        },
+      );
+      return collected.map((event) => event.kind).sort();
+    };
+
+    expect(await classify(indexWith(9, '2020-01-01T00:00:00.000Z'))).toEqual(['create', 'delete']);
+
+    updateLastKnownHash(removed, contentHash('# Removed\n'));
+    lastKnownHash.delete(external);
+    expect(await classify(indexWith(Number(reused.size), statMtime(reused).toISOString()))).toEqual(
+      ['rename'],
+    );
+  });
+
   test('emits separate delete+create when content hashes differ', async () => {
     const oldPath = resolve(contentDir, 'old.md');
     const newPath = resolve(contentDir, 'new.md');
@@ -1014,25 +1064,27 @@ describe('startWatcher file index', () => {
     }
   });
 
-  test('folderIndex detects externally-created empty directory via live watcher', async () => {
+  test('folderIndex detects externally-created empty directory via live watcher', async ({
+    onTestFinished,
+  }) => {
+    const liveContentDir = await mkdtemp(resolve(tmpdir(), 'ok-watcher-live-empty-'));
+    onTestFinished(() => rm(liveContentDir, { recursive: true, force: true }));
     const events: DiskEvent[] = [];
-    const handle = await startWatcher(contentDir, async (e) => {
+    const folderCreated = Promise.withResolvers<void>();
+    const handle = await startWatcher(liveContentDir, async (e) => {
       events.push(e);
-    });
-    try {
-      mkdirSync(resolve(contentDir, 'live-empty'));
-      const deadline = Date.now() + 1000;
-      while (Date.now() < deadline) {
-        if (handle.getFolderIndex().has('live-empty')) break;
-        await new Promise((r) => setTimeout(r, 30));
+      if (e.kind === 'folder-create' && e.relativePath === 'live-empty') {
+        folderCreated.resolve();
       }
-      expect(handle.getFolderIndex().has('live-empty')).toBe(true);
-      expect(
-        events.some((e) => e.kind === 'folder-create' && e.relativePath === 'live-empty'),
-      ).toBe(true);
-    } finally {
-      await handle.unsubscribe();
-    }
+    });
+    onTestFinished(() => handle.unsubscribe());
+
+    mkdirSync(resolve(liveContentDir, 'live-empty'));
+    await folderCreated.promise;
+    expect(handle.getFolderIndex().has('live-empty')).toBe(true);
+    expect(events.some((e) => e.kind === 'folder-create' && e.relativePath === 'live-empty')).toBe(
+      true,
+    );
   });
 });
 
@@ -1715,7 +1767,7 @@ describe('startWatcher symlink handling', () => {
       const entry = index.get('target');
       expect(entry).toBeTruthy();
       expect(entry?.canonicalPath).toBe(targetPath);
-      expect(entry?.inode).toBeGreaterThan(0);
+      expect(entry?.inode).toMatch(/^\d+:[1-9]\d*$/);
       expect(entry?.aliases).toContain('link');
     } finally {
       await handle.unsubscribe();
@@ -1988,7 +2040,7 @@ describe('startWatcher symlink handling', () => {
       const entry = handle.getFileIndex().get('regular');
       expect(entry).toBeTruthy();
       expect(entry?.canonicalPath).toBe(resolve(contentDir, 'regular.md'));
-      expect(entry?.inode).toBeGreaterThan(0);
+      expect(entry?.inode).toMatch(/^\d+:[1-9]\d*$/);
       expect(entry?.aliases).toEqual([]);
     } finally {
       await handle.unsubscribe();

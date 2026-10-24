@@ -13,6 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
+import * as Y from 'yjs';
+import { DiskReceiptLog } from './disk-receipts.ts';
 import {
   _resetDocExtensionsForTests,
   docNameToRelativePath,
@@ -24,12 +26,45 @@ import {
   DISPLACED_VERSION_TTL_MS,
   DocumentDurabilityState,
   DocumentDurabilityStateError,
+  editWasCarried,
   type StorePublishOutcome,
   WRITE_WAIT_BUDGET_MS,
+  writtenThroughOf,
 } from './document-durability-state.ts';
 import * as tracedFs from './fs-traced.ts';
 import { getLogger } from './logger.ts';
 import { getMetrics, resetMetrics } from './metrics.ts';
+import { contentHash } from './version-hash.ts';
+
+describe('the merge a store recorded for agent writes', () => {
+  const at = (clock: number) => ({ clientId: 7, clock });
+
+  test('reaches every write the store carried, not only the first flush that reads it', () => {
+    const state = new DocumentDurabilityState();
+    state.recordStoreIntake('doc', 'both-kept', at(10));
+
+    expect(state.readStoreIntake('doc', at(4))).toBe('both-kept');
+    expect(state.readStoreIntake('doc', at(9))).toBe('both-kept');
+  });
+
+  test('never reaches a write that an earlier store did not carry', () => {
+    const state = new DocumentDurabilityState();
+    state.recordStoreIntake('doc', 'both-kept', at(5));
+    state.recordStoreIntake('doc', 'merged', at(12));
+
+    expect(state.readStoreIntake('doc', at(8))).toBe('merged');
+    expect(state.readStoreIntake('doc', at(13))).toBeUndefined();
+    expect(state.readStoreIntake('doc', { clientId: 8, clock: 1 })).toBeUndefined();
+  });
+
+  test('is cleared with the rest of the document state', () => {
+    const state = new DocumentDurabilityState();
+    state.recordStoreIntake('doc', 'kept-live', at(10));
+    state.deleteReconciledBase('doc');
+
+    expect(state.readStoreIntake('doc', at(4))).toBeUndefined();
+  });
+});
 
 describe('DocumentDurabilityState', () => {
   test('starts with an empty main scope and no transient coordination state', () => {
@@ -41,31 +76,64 @@ describe('DocumentDurabilityState', () => {
     expect(state.isBatchInProgress()).toBe(false);
     expect(state.consumeAgentWriteStore('doc')).toBe(false);
     expect(state.takeStoreFailure('doc')).toBeNull();
-    expect(state.takeStoreDivergence('doc')).toBe(false);
   });
 
-  test('retains reconciled bases independently for each visited branch', () => {
+  test('records receipts for a document without giving it a reconciled base', () => {
+    const state = new DocumentDurabilityState('main', { receipts: new DiskReceiptLog() });
+    state.recordReceiptAgreed('flow.mmd', 'graph TD\n');
+    expect(state.getReceipt('flow.mmd')).toMatchObject({ via: 'agreed' });
+    state.recordReceiptOwnWrite('flow.mmd', 'graph LR\n');
+    expect(state.getReceipt('flow.mmd')).toMatchObject({ via: 'own-write' });
+    expect(state.isRecentOwnWrite('flow.mmd', contentHash('graph LR\n'))).toBe(true);
+    expect(state.getReconciledBase('flow.mmd')).toBeUndefined();
+  });
+
+  test('a batch held by two owners lasts until both release it, and only the last release ends it', () => {
+    const state = new DocumentDurabilityState();
+    state.holdBatch('head-watcher');
+    state.holdBatch('sync-engine');
+    state.holdBatch('sync-engine');
+
+    expect(state.releaseBatch('conflict-resolve')).toBe(false);
+    expect(state.isBatchInProgress()).toBe(true);
+    expect(state.releaseBatch('sync-engine')).toBe(false);
+    expect(state.isBatchInProgress()).toBe(true);
+    expect(state.releaseBatch('head-watcher')).toBe(true);
+    expect(state.isBatchInProgress()).toBe(false);
+    expect(state.releaseBatch('head-watcher')).toBe(false);
+  });
+
+  test('keeps one reconciled base across branch switches, the bytes last agreed with disk', () => {
     const state = new DocumentDurabilityState();
     state.setReconciledBase('doc', 'main bytes');
     state.switchReconciledBaseScope('feature');
-    state.setReconciledBase('doc', 'feature bytes');
-
-    expect(state.getReconciledBase('doc')).toBe('feature bytes');
-    state.switchReconciledBaseScope('main');
     expect(state.getReconciledBase('doc')).toBe('main bytes');
+
+    state.setReconciledBase('doc', 'feature bytes');
+    state.switchReconciledBaseScope('main');
+    expect(state.getReconciledBase('doc')).toBe('feature bytes');
   });
 
-  test('deletes a reconciled base only from the active branch', () => {
+  test('a base deleted on one branch stays deleted after a switch', () => {
     const state = new DocumentDurabilityState();
     state.setReconciledBase('doc', 'main bytes');
     state.switchReconciledBaseScope('feature');
-    state.setReconciledBase('doc', 'feature bytes');
+    state.deleteReconciledBase('doc');
 
     state.switchReconciledBaseScope('main');
-    state.deleteReconciledBase('doc');
     expect(state.getReconciledBase('doc')).toBeUndefined();
+  });
+
+  test('a document with a stale external write on the target branch keeps that branch base', () => {
+    const state = new DocumentDurabilityState();
     state.switchReconciledBaseScope('feature');
-    expect(state.getReconciledBase('doc')).toBe('feature bytes');
+    state.setReconciledBase('doc', 'feature acknowledged');
+    state.recordStaleExternalWrite('doc', 'stale bytes');
+    state.switchReconciledBaseScope('main');
+    state.setReconciledBase('doc', 'main bytes');
+
+    state.switchReconciledBaseScope('feature');
+    expect(state.getReconciledBase('doc')).toBe('feature acknowledged');
   });
 
   test('isolates every owned coordination channel between instances', async () => {
@@ -76,7 +144,6 @@ describe('DocumentDurabilityState', () => {
     first.beginInFlightFlush('doc', 'first flush');
     first.markAgentWriteStore('doc');
     first.recordStoreFailure('doc', { code: 'ENOSPC', message: 'full' });
-    first.recordStoreDivergence('doc');
     first.openDeferredStore('doc');
 
     expect(second.getReconciledBase('doc')).toBeUndefined();
@@ -84,7 +151,6 @@ describe('DocumentDurabilityState', () => {
     expect(second.peekInFlightFlush('doc')).toBeUndefined();
     expect(second.consumeAgentWriteStore('doc')).toBe(false);
     expect(second.takeStoreFailure('doc')).toBeNull();
-    expect(second.takeStoreDivergence('doc')).toBe(false);
     await expect(second.awaitDeferredStoreOutcome('doc')).resolves.toBeUndefined();
   });
 
@@ -246,18 +312,15 @@ describe('DocumentDurabilityState', () => {
     expect(state.peekInFlightFlush('doc')).toBeUndefined();
   });
 
-  test('consumes agent markers, failures, and divergences once', () => {
+  test('consumes agent markers and failures once', () => {
     const state = new DocumentDurabilityState();
     state.markAgentWriteStore('doc');
     state.recordStoreFailure('doc', { message: 'write failed' });
-    state.recordStoreDivergence('doc');
 
     expect(state.consumeAgentWriteStore('doc')).toBe(true);
     expect(state.consumeAgentWriteStore('doc')).toBe(false);
     expect(state.takeStoreFailure('doc')).toEqual({ message: 'write failed' });
     expect(state.takeStoreFailure('doc')).toBeNull();
-    expect(state.takeStoreDivergence('doc')).toBe(true);
-    expect(state.takeStoreDivergence('doc')).toBe(false);
   });
 
   test('clears a store failure without consuming another document failure', () => {
@@ -1474,6 +1537,182 @@ describe('DocumentDurabilityStateError names the running channel CLI', () => {
       );
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe('the durable receipt follows the acknowledged base', () => {
+  test('setting the base records it as agreed, a store records it as an own write, and a delete forgets it', () => {
+    const state = new DocumentDurabilityState();
+    state.setReconciledBase('doc', 'loaded\n');
+    expect(state.getReceipt('doc')).toMatchObject({
+      hash: contentHash('loaded\n'),
+      via: 'agreed',
+    });
+
+    const observation = { size: 7n, mtimeNs: 5n, dev: 1n, ino: 9n };
+    state.recordSuccessfulStore('doc', 'stored\n', undefined, observation);
+    expect(state.getReceipt('doc')).toMatchObject({
+      hash: contentHash('stored\n'),
+      via: 'own-write',
+      ino: '9',
+    });
+    expect(state.isRecentOwnWrite('doc', contentHash('loaded\n'))).toBe(false);
+    expect(state.isRecentOwnWrite('doc', contentHash('stored\n'))).toBe(true);
+
+    state.deleteReconciledBase('doc');
+    expect(state.getReceipt('doc')).toBeUndefined();
+  });
+
+  test('a store that displaces an agent-acknowledged version still records the written bytes', () => {
+    const state = new DocumentDurabilityState();
+    state.setReconciledBase('doc', 'before\n');
+    state.recordSuccessfulStore('doc', 'after\n', 'before\n');
+    expect(state.getReceipt('doc')?.hash).toBe(contentHash('after\n'));
+    expect(state.getReconciledBase('doc')).toBe('after\n');
+  });
+
+  test('the check at load reports a missing, unchanged or changed receipt and counts it', () => {
+    resetMetrics();
+    const dir = mkdtempSync(join(tmpdir(), 'ok-durability-receipts-'));
+    try {
+      const path = join(dir, 'receipts.jsonl');
+      const before = new DocumentDurabilityState('main', {
+        receipts: new DiskReceiptLog({ path }),
+      });
+      expect(before.checkReceiptAtLoad('doc', 'first\n')).toBe('missing');
+      before.setReconciledBase('doc', 'first\n');
+
+      const restarted = new DocumentDurabilityState('main', {
+        receipts: new DiskReceiptLog({ path }),
+      });
+      expect(restarted.getReconciledBase('doc')).toBeUndefined();
+      expect(restarted.checkReceiptAtLoad('doc', 'first\n')).toBe('unchanged');
+      expect(restarted.checkReceiptAtLoad('doc', 'edited while closed\n')).toBe('changed');
+      expect(getMetrics().receiptAtLoad).toEqual({ missing: 1, unchanged: 1, changed: 1 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('an outside change to a document that is not loaded refreshes the receipt it already has', () => {
+    const receipts = new DiskReceiptLog();
+    receipts.recordAgreed('closed', 'v1\n');
+    const state = new DocumentDurabilityState('main', { receipts });
+
+    state.refreshReceiptWithoutBase('closed', 'v2\n');
+    expect(state.getReceipt('closed')?.hash).toBe(contentHash('v2\n'));
+
+    state.refreshReceiptWithoutBase('never-loaded', 'bytes\n');
+    expect(state.getReceipt('never-loaded')).toBeUndefined();
+
+    state.setReconciledBase('loaded', 'v1\n');
+    state.refreshReceiptWithoutBase('loaded', 'v2\n');
+    expect(state.getReceipt('loaded')?.hash).toBe(contentHash('v1\n'));
+  });
+});
+
+describe('which edits a rename outside the app carried to the new name', () => {
+  function frozenDocWithCarriedAndLaterEdit() {
+    const document = new Y.Doc();
+    const source = document.getText('source');
+    source.insert(0, 'Before the move.\n');
+    const carriedEdit = writtenThroughOf(document);
+    const carried = writtenThroughOf(document);
+    source.insert(source.length, 'After the move.\n');
+    const laterEdit = writtenThroughOf(document);
+    return { carriedEdit, carried, laterEdit };
+  }
+
+  test('an edit the carry included is carried, and an edit made after it is not', () => {
+    const { carriedEdit, carried, laterEdit } = frozenDocWithCarriedAndLaterEdit();
+    expect(editWasCarried(carriedEdit, carried)).toBe(true);
+    expect(editWasCarried(laterEdit, carried)).toBe(false);
+    expect(editWasCarried(carriedEdit, null)).toBe(false);
+    expect(editWasCarried(undefined, carried)).toBe(false);
+    expect(editWasCarried({ ...carriedEdit, clientId: carriedEdit.clientId + 1 }, carried)).toBe(
+      false,
+    );
+  });
+
+  test('a write refused while the carry runs waits for it, and a failed carry answers not carried', async () => {
+    const state = new DocumentDurabilityState();
+    const { carried } = frozenDocWithCarriedAndLaterEdit();
+    const carry = state.beginRenameCarry('notes');
+    let answered = false;
+    const answer = state.awaitRenameCarry('notes', carry).then((value) => {
+      answered = true;
+      return value;
+    });
+    await Promise.resolve();
+    expect(answered).toBe(false);
+    state.settleRenameCarry('notes', null);
+    expect(await answer).toEqual({ kind: 'settled', carried: null });
+
+    const archive = state.beginRenameCarry('archive');
+    const carriedAnswer = state.awaitRenameCarry('archive', archive);
+    state.settleRenameCarry('archive', carried);
+    expect(await carriedAnswer).toEqual({ kind: 'settled', carried });
+    expect(await state.awaitRenameCarry('archive', state.renameCarryOf('archive'))).toEqual({
+      kind: 'settled',
+      carried,
+    });
+  });
+
+  test('a route that begins a carry and never reaches it answers not carried', async () => {
+    const state = new DocumentDurabilityState();
+    const carry = state.beginRenameCarry('notes');
+    expect(state.beginRenameCarry('notes')).toBe(carry);
+    state.abandonRenameCarry('notes');
+    expect(await carry).toEqual({ kind: 'settled', carried: null });
+  });
+
+  test('a revive while the carry runs still answers the waiting write, and the late settle leaves no record', async () => {
+    const state = new DocumentDurabilityState();
+    const { carried } = frozenDocWithCarriedAndLaterEdit();
+    const carry = state.beginRenameCarry('notes');
+    state.endRenameCarry('notes');
+    state.settleRenameCarry('notes', carried);
+    expect(await carry).toEqual({ kind: 'settled', carried });
+    expect(state.renameCarryOf('notes')).toBeUndefined();
+
+    state.beginRenameCarry('archive');
+    state.settleRenameCarry('archive', carried);
+    state.endRenameCarry('archive');
+    expect(state.renameCarryOf('archive')).toBeUndefined();
+    state.settleRenameCarry('archive', carried);
+    expect(state.renameCarryOf('archive')).toBeUndefined();
+  });
+
+  test('ending every record at shutdown answers a waiting write as stopped and leaves none', async () => {
+    const state = new DocumentDurabilityState();
+    const { carried } = frozenDocWithCarriedAndLaterEdit();
+    const pending = state.beginRenameCarry('notes');
+    state.beginRenameCarry('archive');
+    state.settleRenameCarry('archive', carried);
+    state.endAllRenameCarries();
+    expect(await pending).toEqual({ kind: 'stopped' });
+    expect(state.renameCarryOf('notes')).toBeUndefined();
+    expect(state.renameCarryOf('archive')).toBeUndefined();
+  });
+
+  test("a carry that outlasts the write's remaining wait answers unsettled, never not carried", async () => {
+    const state = new DocumentDurabilityState();
+    const carry = state.beginRenameCarry('notes');
+    const warn = vi
+      .spyOn(getLogger('document-durability-state'), 'warn')
+      .mockImplementation(() => {});
+    try {
+      const started = Date.now();
+      const answer = await state.runWithinWriteWaitBudget(
+        () => state.awaitRenameCarry('notes', carry),
+        20,
+      );
+      expect(answer).toEqual({ kind: 'unsettled' });
+      expect(Date.now() - started).toBeLessThan(WRITE_WAIT_BUDGET_MS);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
     }
   });
 });

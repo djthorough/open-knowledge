@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { type Editor, getSchema, isMacOS } from '@tiptap/core';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { type ReactNode, type Ref, useEffect, useImperativeHandle } from 'react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
 import { registerEditor, unregisterEditor } from '@/editor/active-editor';
 import { collectImageParts } from '@/editor/composer-drop.test-helper';
@@ -23,6 +23,23 @@ import {
   reloadRegisteredAgentsFromStorage,
   setDetectedRegisteredAgentSuggestions,
 } from '@/lib/acp/registered-agents';
+import {
+  type DockArrangement,
+  dockArrangementStorageKey,
+  dockTerminalPlacement,
+  legacyDockArrangement,
+  readDockArrangement,
+  withDockTerminalPlacement,
+  writeDockArrangement,
+} from '@/lib/dock-arrangement-store';
+import { requestDockPaneMove } from '@/lib/dock-move-requests';
+import {
+  bottomTerminalDockTree,
+  DEFAULT_CHAT_SHARE,
+  type DockNode,
+  isDockLeaf,
+  moveDockPane,
+} from '@/lib/dock-tree';
 import { narrowWorkspaceSessionKey } from '@/lib/narrow-workspace-session';
 import {
   __resetPaneVisibilityStoreForTests,
@@ -147,6 +164,7 @@ function shiftJKeydownInit(): KeyboardEventInit {
 }
 
 import * as actualLinguiMacro from '@lingui/react/macro';
+import type { WorkspaceHeaderChrome } from './EditorArea';
 
 vi.doMock('@lingui/react/macro', () => ({
   ...actualLinguiMacro,
@@ -184,8 +202,10 @@ vi.doMock('@/lib/config-provider', () => ({
 }));
 
 let workspaceContentDir: string | null = '/tmp/project';
+let workspaceKnown = true;
 vi.doMock('@/lib/use-workspace', () => ({
-  useWorkspace: () => ({ contentDir: workspaceContentDir, pathSeparator: '/' }),
+  useWorkspace: () =>
+    workspaceKnown ? { contentDir: workspaceContentDir, pathSeparator: '/' } : null,
 }));
 
 let activeProvider: { document: Y.Doc } | undefined;
@@ -222,7 +242,7 @@ type MockPlacements = {
 let reportedPlacements: MockPlacements | null = null;
 
 type MockPaneExtents = Record<PaneId, boolean>;
-const PANES_WITH_EXTENT: MockPaneExtents = { agents: true, terminal: true };
+const PANES_WITH_EXTENT: MockPaneExtents = { editor: true, agents: true, terminal: true };
 let paneExtents: MockPaneExtents = { ...PANES_WITH_EXTENT };
 let reportPaneExtentChange: (() => void) | undefined;
 
@@ -233,7 +253,6 @@ function setPaneExtent(pane: PaneId, hasExtent: boolean): void {
 
 type MockEditorAreaHandle = {
   panesOnScreen(): MockPaneExtents;
-  bringBackPane(pane: PaneId): void;
 };
 
 function MockPaneExtentHandle({
@@ -246,10 +265,6 @@ function MockPaneExtentHandle({
   reportPaneExtentChange = onPaneExtentChange;
   useImperativeHandle(handleRef, () => ({
     panesOnScreen: () => ({ ...paneExtents }),
-    bringBackPane: (pane) => {
-      paneExtents = { ...paneExtents, [pane]: true };
-      onPaneExtentChange?.();
-    },
   }));
   return null;
 }
@@ -265,35 +280,48 @@ function ReportPlacements({
   return null;
 }
 
+let drawnDockTrees: DockNode[] = [];
+let changeDrawnDockTree: ((update: (tree: DockNode) => DockNode) => void) | undefined;
+
 vi.doMock('./EditorArea', () => ({
   EditorArea: ({
     ref,
     onPaneExtentChange,
     renderWorkspaceHeader,
-    terminalPlacement,
-    terminalRightWidth,
+    dockTree,
+    onDockTreeChange,
     editorVisible,
+    agentsVisible,
     onSessionPlacements,
   }: {
     ref?: Ref<MockEditorAreaHandle>;
     editorVisible?: boolean;
+    agentsVisible?: boolean;
     onPaneExtentChange?: () => void;
-    renderWorkspaceHeader?: (tabs: ReactNode, chrome: { trailing: ReactNode }) => ReactNode;
-    terminalPlacement?: string;
-    terminalRightWidth?: number;
+    renderWorkspaceHeader?: (tabs: ReactNode, chrome: WorkspaceHeaderChrome) => ReactNode;
+    dockTree: DockNode;
+    onDockTreeChange: (update: (tree: DockNode) => DockNode) => void;
     onSessionPlacements?: (placements: MockPlacements) => void;
-  }) => (
-    <div
-      data-testid="editor-area"
-      data-terminal-placement={terminalPlacement}
-      data-terminal-right-width={terminalRightWidth}
-      data-editor-visible={String(editorVisible)}
-    >
-      {renderWorkspaceHeader?.(<div data-testid="workspace-tabs" />, { trailing: null })}
-      <ReportPlacements onSessionPlacements={onSessionPlacements} />
-      <MockPaneExtentHandle handleRef={ref} onPaneExtentChange={onPaneExtentChange} />
-    </div>
-  ),
+  }) => {
+    drawnDockTrees.push(dockTree);
+    changeDrawnDockTree = onDockTreeChange;
+    return (
+      <div
+        data-testid="editor-area"
+        data-terminal-placement={dockTerminalPlacement(dockTree)}
+        data-editor-visible={String(editorVisible)}
+        data-agents-visible={String(agentsVisible)}
+      >
+        {renderWorkspaceHeader?.(<div data-testid="workspace-tabs" />, {
+          leading: null,
+          trailing: null,
+          sidebarSwap: false,
+        })}
+        <ReportPlacements onSessionPlacements={onSessionPlacements} />
+        <MockPaneExtentHandle handleRef={ref} onPaneExtentChange={onPaneExtentChange} />
+      </div>
+    );
+  },
 }));
 vi.doMock('./acp/AgentThreadClientBinder', () => ({
   AgentThreadClientBinder: () => null,
@@ -802,6 +830,28 @@ describe('EditorPane session-panel wiring', () => {
     expect(placement()).toBe('bottom');
   });
 
+  test('desktop: two move-terminal actions in one task bring the terminal back where it started', async () => {
+    const desk = makeOkDesktopStub();
+    (window as { okDesktop?: unknown }).okDesktop = desk.stub;
+    await renderEditorPane();
+    const placement = () =>
+      screen.getByTestId('editor-area').getAttribute('data-terminal-placement');
+    expect(placement()).toBe('bottom');
+
+    act(() => {
+      desk.dispatchMenuAction('move-terminal');
+      desk.dispatchMenuAction('move-terminal');
+    });
+    expect(placement()).toBe('bottom');
+
+    act(() => {
+      desk.dispatchMenuAction('move-terminal');
+      desk.dispatchMenuAction('move-terminal');
+      desk.dispatchMenuAction('move-terminal');
+    });
+    expect(placement()).toBe('right');
+  });
+
   test('desktop: hiding the terminal clears the launch intent so a reopen is blank (regression)', async () => {
     const desk = makeOkDesktopStub();
     (window as { okDesktop?: unknown }).okDesktop = desk.stub;
@@ -1055,9 +1105,8 @@ describe('EditorPane session-panel wiring', () => {
     expect(screen.getByTestId('terminal-dock').getAttribute('data-visible')).toBe('true');
   });
 
-  test('desktop: per-install right layout reaches both editor and stable terminal host', async () => {
+  test('desktop: a per-install right placement reaches both the editor and the stable terminal host', async () => {
     localStorage.setItem('ok-terminal-placement-v1', 'right');
-    localStorage.setItem('ok-terminal-right-width-v1', '812');
     const desk = makeOkDesktopStub(async () => ({
       terminalVisible: true,
       agentPanelVisible: false,
@@ -1067,7 +1116,6 @@ describe('EditorPane session-panel wiring', () => {
     await renderEditorPane();
 
     expect(screen.getByTestId('editor-area').getAttribute('data-terminal-placement')).toBe('right');
-    expect(screen.getByTestId('editor-area').getAttribute('data-terminal-right-width')).toBe('812');
     expect(screen.getByTestId('terminal-dock').getAttribute('data-terminal-placement')).toBe(
       'right',
     );
@@ -1076,7 +1124,6 @@ describe('EditorPane session-panel wiring', () => {
 
   test('desktop: a late project-state restore cannot override a user-owned per-install layout', async () => {
     localStorage.setItem('ok-terminal-placement-v1', 'right');
-    localStorage.setItem('ok-terminal-right-width-v1', '812');
     let resolveDockState: ((state: DockStateResult) => void) | undefined;
     const desk = makeOkDesktopStub(
       () =>
@@ -1089,7 +1136,6 @@ describe('EditorPane session-panel wiring', () => {
     render(<EditorPane />);
 
     expect(screen.getByTestId('editor-area').getAttribute('data-terminal-placement')).toBe('right');
-    expect(screen.getByTestId('editor-area').getAttribute('data-terminal-right-width')).toBe('812');
 
     await userEvent.click(screen.getByRole('button', { name: 'Move mock Terminal bottom' }));
     expect(screen.getByTestId('editor-area').getAttribute('data-terminal-placement')).toBe(
@@ -1108,7 +1154,6 @@ describe('EditorPane session-panel wiring', () => {
     expect(screen.getByTestId('editor-area').getAttribute('data-terminal-placement')).toBe(
       'bottom',
     );
-    expect(screen.getByTestId('editor-area').getAttribute('data-terminal-right-width')).toBe('812');
     expect(desk.dockStateUpdates).toEqual([]);
   });
 
@@ -2017,32 +2062,6 @@ describe('EditorPane pane visibility for the header', () => {
     });
   });
 
-  test('a show request for an open pane at zero size brings it back without hiding and reshowing it', async () => {
-    const desk = makeOkDesktopStub(async () => ({
-      terminalVisible: true,
-      agentPanelVisible: true,
-    }));
-    (window as { okDesktop?: unknown }).okDesktop = desk.stub;
-    await renderEditorPane();
-    setPaneExtent('terminal', false);
-    setPaneExtent('agents', false);
-    const opensBefore = terminalOpenedCalls.length;
-    const menuPushesBefore = desk.viewMenuPushes.length;
-
-    act(() => paneVisibilityStore.request('terminal', true));
-    act(() => paneVisibilityStore.request('agents', true));
-
-    expect(paneVisibilityStore.getSnapshot()).toEqual({
-      editor: { open: true, onScreen: true },
-      agents: { open: true, onScreen: true },
-      terminal: { open: true, onScreen: true },
-    });
-    expect(screen.getByTestId('terminal-dock').getAttribute('data-visible')).toBe('true');
-    expect(screen.getByTestId('agents-panel').getAttribute('data-visible')).toBe('true');
-    expect(terminalOpenedCalls).toHaveLength(opensBefore);
-    expect(desk.viewMenuPushes.slice(menuPushesBefore)).toEqual([]);
-  });
-
   test('a hide request for a pane on screen still hides it', async () => {
     (window as { okDesktop?: unknown }).okDesktop = makeOkDesktopStub(async () => ({
       terminalVisible: true,
@@ -2732,6 +2751,229 @@ describe('EditorPane saves and restores whether the editor is shown', () => {
     await renderEditorPane();
     expect(editorVisibleAttr()).toBe('false');
     expect(localStorage.getItem('ok-editor-visible-v1')).toBe('false');
+  });
+});
+
+describe('EditorPane keeps each project its own dock arrangement', () => {
+  beforeEach(() => {
+    drawnDockTrees = [];
+    (window as { okDesktop?: unknown }).okDesktop = makeOkDesktopStub().stub;
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete (window as { okDesktop?: unknown }).okDesktop;
+    localStorage.clear();
+    workspaceContentDir = '/tmp/project';
+    workspaceKnown = true;
+    drawnDockTrees = [];
+    changeDrawnDockTree = undefined;
+  });
+
+  const NO_LEGACY_KEYS = { getItem: () => null };
+  const seed = (): DockArrangement =>
+    legacyDockArrangement(
+      { widthPx: window.innerWidth, heightPx: window.innerHeight },
+      NO_LEGACY_KEYS,
+    );
+  const rightTerminal = (): DockArrangement => withDockTerminalPlacement(seed(), 'right');
+  const drawnPlacement = () =>
+    screen.getByTestId('editor-area').getAttribute('data-terminal-placement');
+  function storedDockKeys(): string[] {
+    const keys: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith('ok-dock-arrangement-v1')) keys.push(key);
+    }
+    return keys;
+  }
+  const moveTerminalRight = (tree: DockNode) => moveDockPane(tree, 'terminal', 'editor', 'end');
+  const shape = (node: DockNode): unknown =>
+    isDockLeaf(node) ? node.pane : { [node.direction]: node.items.map((item) => shape(item.node)) };
+
+  test('a request to move Agents to the left edge docks it along the start, saves that, and shows it', async () => {
+    await renderEditorPane();
+    expect(screen.getByTestId('editor-area').getAttribute('data-agents-visible')).toBe('false');
+
+    act(() => requestDockPaneMove({ pane: 'agents', side: 'left' }));
+    await act(async () => {});
+
+    const drawn = drawnDockTrees.at(-1);
+    if (drawn === undefined) throw new Error('the editor area never drew');
+    expect(shape(drawn)).toEqual({ row: ['agents', { column: ['editor', 'terminal'] }] });
+    const saved = readDockArrangement(dockArrangementStorageKey('/tmp/project'));
+    expect(saved === null ? null : shape(saved.tree)).toEqual(shape(drawn));
+    expect(screen.getByTestId('editor-area').getAttribute('data-agents-visible')).toBe('true');
+  });
+
+  test('right to left, a request for the right edge docks the pane at the start', async () => {
+    document.documentElement.style.direction = 'rtl';
+    try {
+      await renderEditorPane();
+      act(() => requestDockPaneMove({ pane: 'agents', side: 'right' }));
+
+      const drawn = drawnDockTrees.at(-1);
+      if (drawn === undefined) throw new Error('the editor area never drew');
+      expect(shape(drawn)).toEqual({ row: ['agents', { column: ['editor', 'terminal'] }] });
+    } finally {
+      document.documentElement.style.direction = '';
+    }
+  });
+
+  test('a request to move the Terminal to the bottom edge puts it under the editor and Agents', async () => {
+    await renderEditorPane();
+    act(() => requestDockPaneMove({ pane: 'terminal', side: 'bottom' }));
+
+    const drawn = drawnDockTrees.at(-1);
+    if (drawn === undefined) throw new Error('the editor area never drew');
+    expect(shape(drawn)).toEqual({ column: [{ row: ['editor', 'agents'] }, 'terminal'] });
+  });
+
+  test('a request to move the Terminal to the right edge opens it at the share of the space it last split with the editor', async () => {
+    writeDockArrangement(dockArrangementStorageKey('/tmp/project'), {
+      tree: bottomTerminalDockTree(DEFAULT_CHAT_SHARE, 0.3),
+      terminalShares: { bottom: 0.3, right: 0.45 },
+    });
+    await renderEditorPane();
+    act(() => requestDockPaneMove({ pane: 'terminal', side: 'right' }));
+
+    const drawn = drawnDockTrees.at(-1);
+    if (drawn === undefined || isDockLeaf(drawn)) throw new Error('the editor area never drew');
+    expect(shape(drawn)).toEqual({ row: ['editor', 'agents', 'terminal'] });
+    const [editor, , terminal] = drawn.items.map((item) => item.size);
+    if (editor === undefined || terminal === undefined) throw new Error('the row lost a pane');
+    expect(terminal / (terminal + editor)).toBeCloseTo(0.45, 10);
+  });
+
+  test('a Terminal moved to an edge and back below the editor returns at the height it left with', async () => {
+    const desk = makeOkDesktopStub();
+    (window as { okDesktop?: unknown }).okDesktop = desk.stub;
+    writeDockArrangement(dockArrangementStorageKey('/tmp/project'), {
+      tree: bottomTerminalDockTree(DEFAULT_CHAT_SHARE, 0.5),
+      terminalShares: { bottom: 0.3, right: 0.45 },
+    });
+    await renderEditorPane();
+
+    act(() => requestDockPaneMove({ pane: 'terminal', side: 'left' }));
+    expect(drawnPlacement()).toBe('right');
+    act(() => desk.dispatchMenuAction('move-terminal'));
+
+    const drawn = drawnDockTrees.at(-1);
+    if (drawn === undefined || isDockLeaf(drawn)) throw new Error('the editor area never drew');
+    expect(shape(drawn)).toEqual({ row: [{ column: ['editor', 'terminal'] }, 'agents'] });
+    const column = drawn.items[0]?.node;
+    if (column === undefined || isDockLeaf(column)) throw new Error('the editor column is gone');
+    expect(column.items[1]?.size).toBeCloseTo(0.5, 10);
+  });
+
+  test('repeated trips to the right edge and back under the editor by header drag open the same sizes every time', async () => {
+    await renderEditorPane();
+    const atEdge: number[][] = [];
+
+    for (let round = 0; round < 3; round += 1) {
+      act(() => requestDockPaneMove({ pane: 'terminal', side: 'right' }));
+      const drawn = drawnDockTrees.at(-1);
+      if (drawn === undefined || isDockLeaf(drawn)) throw new Error('the editor area never drew');
+      expect(shape(drawn)).toEqual({ row: ['editor', 'agents', 'terminal'] });
+      atEdge.push(drawn.items.map((item) => Number(item.size.toFixed(9))));
+      act(() =>
+        changeDrawnDockTree?.((tree) => moveDockPane(tree, 'terminal', 'editor', 'bottom', 0.5)),
+      );
+      expect(drawnPlacement()).toBe('bottom');
+    }
+
+    expect(atEdge[1]).toEqual(atEdge[0]);
+    expect(atEdge[2]).toEqual(atEdge[0]);
+  });
+
+  test('the first layout drawn is the arrangement the project stored', async () => {
+    writeDockArrangement(dockArrangementStorageKey('/tmp/project'), rightTerminal());
+    await renderEditorPane();
+
+    const first = drawnDockTrees[0];
+    if (first === undefined) throw new Error('the editor area never drew');
+    expect(dockTerminalPlacement(first)).toBe('right');
+    expect(drawnPlacement()).toBe('right');
+  });
+
+  test('nothing is saved until the layout changes, and a change is saved under the project key', async () => {
+    await renderEditorPane();
+    expect(drawnPlacement()).toBe('bottom');
+    expect(storedDockKeys()).toEqual([]);
+
+    act(() => changeDrawnDockTree?.(moveTerminalRight));
+
+    expect(drawnPlacement()).toBe('right');
+    expect(storedDockKeys()).toEqual([dockArrangementStorageKey('/tmp/project')]);
+    const saved = readDockArrangement(dockArrangementStorageKey('/tmp/project'));
+    expect(saved === null ? null : dockTerminalPlacement(saved.tree)).toBe('right');
+  });
+
+  test('a project switch draws that project’s arrangement, or the same seed a reload gives it', async () => {
+    writeDockArrangement(dockArrangementStorageKey('/tmp/project-b'), rightTerminal());
+    workspaceContentDir = '/tmp/project-a';
+    const view = await renderEditorPane();
+    const { EditorPane } = await import('./EditorPane');
+    expect(drawnPlacement()).toBe('bottom');
+
+    workspaceContentDir = '/tmp/project-b';
+    act(() => view.rerender(<EditorPane />));
+    expect(drawnPlacement()).toBe('right');
+
+    workspaceContentDir = '/tmp/project-c';
+    act(() => view.rerender(<EditorPane />));
+    expect(drawnPlacement()).toBe('bottom');
+    const switched = drawnDockTrees.at(-1);
+
+    cleanup();
+    await renderEditorPane();
+    expect(drawnDockTrees.at(-1)).toEqual(switched);
+    expect(storedDockKeys()).toEqual([dockArrangementStorageKey('/tmp/project-b')]);
+  });
+
+  test('on the web the first layout drawn is the one stored for the origin, and it holds when the project becomes known', async () => {
+    delete (window as { okDesktop?: unknown }).okDesktop;
+    writeDockArrangement(dockArrangementStorageKey(null), rightTerminal());
+    workspaceKnown = false;
+    const view = await renderEditorPane();
+    const { EditorPane } = await import('./EditorPane');
+
+    const first = drawnDockTrees[0];
+    if (first === undefined) throw new Error('the editor area never drew');
+    expect(dockTerminalPlacement(first)).toBe('right');
+
+    workspaceKnown = true;
+    act(() => view.rerender(<EditorPane />));
+
+    expect(drawnDockTrees.length).toBeGreaterThan(1);
+    expect(drawnDockTrees.map(dockTerminalPlacement)).toEqual(drawnDockTrees.map(() => 'right'));
+  });
+
+  test('a layout change in one project stays with it when the window switches to a project with none saved', async () => {
+    workspaceContentDir = '/tmp/project-a';
+    const view = await renderEditorPane();
+    const { EditorPane } = await import('./EditorPane');
+    act(() => changeDrawnDockTree?.(moveTerminalRight));
+    expect(drawnPlacement()).toBe('right');
+
+    workspaceContentDir = '/tmp/project-b';
+    act(() => view.rerender(<EditorPane />));
+
+    expect(drawnPlacement()).toBe('bottom');
+    expect(storedDockKeys()).toEqual([dockArrangementStorageKey('/tmp/project-a')]);
+  });
+
+  test('on the web a layout change is saved under the origin’s name while the project is still unknown', async () => {
+    delete (window as { okDesktop?: unknown }).okDesktop;
+    workspaceKnown = false;
+    await renderEditorPane();
+    act(() => changeDrawnDockTree?.(moveTerminalRight));
+    await act(async () => {});
+
+    expect(drawnPlacement()).toBe('right');
+    expect(storedDockKeys()).toEqual([dockArrangementStorageKey(null)]);
+    const saved = readDockArrangement(dockArrangementStorageKey(null));
+    expect(saved === null ? null : dockTerminalPlacement(saved.tree)).toBe('right');
   });
 });
 

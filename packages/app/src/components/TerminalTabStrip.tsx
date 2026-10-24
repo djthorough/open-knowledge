@@ -9,7 +9,14 @@ import {
 } from '@dnd-kit/sortable';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { PanelBottomIcon, PanelRightIcon, XIcon } from 'lucide-react';
-import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
@@ -79,22 +86,27 @@ export interface TerminalTabDescriptor {
 export type SessionPanelEdge = 'bottom' | 'right';
 type SessionKind = 'terminal' | 'agent';
 
-function BottomTerminalPlacementMenu({
+function StripRowMenu({
   children,
-  onMoveRight,
+  items,
+  disabled,
+  focusFallback,
 }: {
   readonly children: ReactElement;
-  readonly onMoveRight?: () => void;
+  readonly items: ReactNode;
+  readonly disabled: boolean;
+  readonly focusFallback?: RefObject<HTMLElement | null>;
 }) {
   const keyboardTriggerRef = useRef<HTMLElement | null>(null);
-  if (onMoveRight == null) return children;
+  if (items == null) return children;
 
   return (
     <ContextMenu>
       <ContextMenuTrigger
         asChild
+        disabled={disabled}
         onKeyDown={(event) => {
-          if (!shouldOpenTabContextMenu(event)) return;
+          if (disabled || !shouldOpenTabContextMenu(event)) return;
           event.preventDefault();
           keyboardTriggerRef.current =
             document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -113,18 +125,14 @@ function BottomTerminalPlacementMenu({
       </ContextMenuTrigger>
       <ContextMenuContent
         onCloseAutoFocus={(event) => {
-          if (keyboardTriggerRef.current == null) return;
+          const trigger = keyboardTriggerRef.current;
+          if (trigger == null) return;
           event.preventDefault();
-          keyboardTriggerRef.current.focus();
           keyboardTriggerRef.current = null;
+          (trigger.isConnected ? trigger : focusFallback?.current)?.focus();
         }}
       >
-        <ContextMenuGroup>
-          <ContextMenuItem onSelect={onMoveRight}>
-            <PanelRightIcon aria-hidden="true" />
-            <Trans>Move to right panel</Trans>
-          </ContextMenuItem>
-        </ContextMenuGroup>
+        <ContextMenuGroup>{items}</ContextMenuGroup>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -137,7 +145,10 @@ interface TerminalTabStripProps {
   readonly onSelect: (id: string) => void;
   readonly onTabActivate?: (id: string) => void;
   readonly newButton?: ReactNode;
+  readonly leadingControls?: ReactNode;
   readonly trailingControls?: ReactNode;
+  readonly rowMenu?: ReactNode;
+  readonly rowMenuFocusFallback?: RefObject<HTMLElement | null>;
   readonly onClose: (id: string) => void;
   readonly onRename?: (id: string, label: string) => void;
   readonly onReorder?: (newOrderIds: readonly string[]) => void;
@@ -156,7 +167,10 @@ export function TerminalTabStrip({
   onSelect,
   onTabActivate,
   newButton,
+  leadingControls,
   trailingControls,
+  rowMenu,
+  rowMenuFocusFallback,
   onClose,
   onRename,
   onReorder,
@@ -268,10 +282,24 @@ export function TerminalTabStrip({
       onValueChange={onSelect}
       className={cn('flex min-h-0 min-w-0 flex-1 flex-col', className)}
     >
-      <BottomTerminalPlacementMenu onMoveRight={onMoveRight}>
+      <StripRowMenu
+        items={
+          onMoveRight != null ? (
+            <ContextMenuItem onSelect={onMoveRight}>
+              <PanelRightIcon aria-hidden="true" />
+              <Trans>Move to right panel</Trans>
+            </ContextMenuItem>
+          ) : (
+            rowMenu
+          )
+        }
+        disabled={renamingId != null}
+        focusFallback={rowMenuFocusFallback}
+      >
         <div
           ref={rowRef}
           data-terminal-tab-row=""
+          data-dock-handle={draggable ? undefined : ''}
           data-electron-drag={windowDragRegion ? '' : undefined}
           className={cn(
             'flex shrink-0 flex-row items-center gap-1 px-1.5 py-1',
@@ -281,6 +309,11 @@ export function TerminalTabStrip({
               'h-[62px] pr-[22px] pl-[calc(var(--ok-titlebar-reserve-left,1rem)+0.75rem)]',
           )}
         >
+          {leadingControls != null ? (
+            <div className={cn('shrink-0', windowDragRegion && '[-webkit-app-region:no-drag]')}>
+              {leadingControls}
+            </div>
+          ) : null}
           <DndContext
             sensors={sensors}
             autoScroll={TAB_REORDER_AUTO_SCROLL}
@@ -297,7 +330,6 @@ export function TerminalTabStrip({
               items={sessions.map((session) => session.id)}
               strategy={horizontalListSortingStrategy}
             >
-              {}
               <div
                 onWheel={scrollTabStripOnWheel}
                 className={cn(
@@ -455,15 +487,12 @@ export function TerminalTabStrip({
               </div>
             </SortableContext>
           </DndContext>
-          {}
           {newButton != null ? (
             <div className={cn('shrink-0', windowDragRegion && '[-webkit-app-region:no-drag]')}>
               {newButton}
             </div>
           ) : null}
-          {}
           <div className="flex-1" />
-          {}
           {trailingControls != null ? (
             <div className={cn('shrink-0', windowDragRegion && '[-webkit-app-region:no-drag]')}>
               {trailingControls}
@@ -496,7 +525,7 @@ export function TerminalTabStrip({
             </Tooltip>
           ) : null}
         </div>
-      </BottomTerminalPlacementMenu>
+      </StripRowMenu>
       {children}
     </Tabs>
   );

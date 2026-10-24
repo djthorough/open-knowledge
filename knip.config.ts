@@ -71,7 +71,7 @@ export default {
     'packages/app/src/editor/http-client.ts': ['types'],
     '.{agents,codex}/skills/**': ['files'],
     'lint-plugins/no-comments/__fixtures__/**': ['files'],
-    'lint-plugins/ok-rules/__fixtures__/**': ['files'],
+    'lint-plugins/ok-rules/__fixtures__/**': ['files', 'exports'],
     '**/*.reads.{ts,mjs}': ['files', 'exports'],
     'scripts/compute-next-beta.mjs': ['files'],
     'scripts/build-slack-release-payload.mjs': ['files'],
@@ -107,6 +107,8 @@ export default {
     '.': {
       entry: [
         'test-support/fixtures/no-net-connect/no-net-connect.fixture.ts',
+        'test-support/fixtures/read-declarations/vitest.read-declarations-fixture.config.ts',
+        'test-support/fixtures/read-declarations/*.cjs',
         'scripts/check-no-major-changeset.mjs',
       ],
       vitest: { entry: ['**/*.uncached.test.{ts,tsx,mjs}'] },
@@ -165,7 +167,7 @@ export default {
       entry: [
         'src/main/entry.ts',
         'src/utility/server-entry.ts',
-        'src/utility/pty-host.ts',
+        'src/utility/pty-host-entry.ts',
         'src/**/*.test.ts',
         'src/**/*.typelock.ts',
         'src/utility/server-entry-load-probe.fixture.test-helper.ts',
